@@ -25,8 +25,13 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease
           mkdir -p ../WebCompilerApp/app/src/main/assets
-          cp app/build/outputs/apk/release/app-release.apk \
-             ../WebCompilerApp/app/src/main/assets/template.apk
+          APK=$(find app/build/outputs -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: No APK found in build outputs"
+            exit 1
+          fi
+          echo "Found APK: $APK"
+          cp "$APK" ../WebCompilerApp/app/src/main/assets/template.apk
 
       # Step 2: Download apktool.jar
       - name: Download apktool
