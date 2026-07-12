@@ -18,7 +18,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # Step 1: Build WebViewTemplate → template.apk
+      # Step 1: Generate debug keystore for template signing
+      - name: Generate template debug keystore
+        run: |
+          keytool -genkey -v -keystore WebViewTemplate/debug.keystore \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 \
+            -validity 10000 -storepass android -keypass android \
+            -dname "CN=Debug, OU=Dev, O=WebCompiler, L=City, ST=State, C=US"
+
+      # Step 2: Build WebViewTemplate → template.apk (signed with debug key)
       - name: Build template APK
         run: |
           cd WebViewTemplate
@@ -33,22 +41,15 @@ jobs:
           echo "Found APK: $APK"
           cp "$APK" ../WebCompilerApp/app/src/main/assets/template.apk
 
-      # Step 2: Download apktool.jar
-      - name: Download apktool
-        run: |
-          mkdir -p WebCompilerApp/app/src/main/assets
-          curl -L -o WebCompilerApp/app/src/main/assets/apktool.jar \
-            https://github.com/iBotPeaches/Apktool/releases/latest/download/apktool_2.9.3.jar
-
-      # Step 3: Generate debug keystore for signing the WebCompilerApp APK
-      - name: Generate debug keystore
+      # Step 3: Generate debug keystore for WebCompilerApp signing
+      - name: Generate WebCompilerApp debug keystore
         run: |
           keytool -genkey -v -keystore WebCompilerApp/debug.keystore \
             -alias androiddebugkey -keyalg RSA -keysize 2048 \
             -validity 10000 -storepass android -keypass android \
             -dname "CN=Debug, OU=Dev, O=WebCompiler, L=City, ST=State, C=US"
 
-      # Step 4: Build WebCompilerApp
+      # Step 4: Build WebCompilerApp (signed with debug key)
       - name: Build WebCompilerApp APK
         run: |
           cd WebCompilerApp

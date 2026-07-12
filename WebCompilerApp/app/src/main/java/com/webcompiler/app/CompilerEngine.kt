@@ -34,17 +34,18 @@ class CompilerEngine(private val context: Context) {
         "STORAGE" to "android.permission.READ_EXTERNAL_STORAGE"
     )
 
-    fun extractBundledAssets(destDir: File = context.filesDir): Pair<File, File> {
+    fun extractBundledAssets(destDir: File = context.filesDir): File? {
         val templateApk = File(destDir, "template.apk")
-        val assets = context.assets
         if (!templateApk.exists()) {
             try {
-                assets.open("template.apk").use { input ->
+                context.assets.open("template.apk").use { input ->
                     FileOutputStream(templateApk).use { output -> input.copyTo(output) }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                return null
+            }
         }
-        return Pair(File(destDir, "apktool.jar"), templateApk)
+        return templateApk
     }
 
     fun build(config: Config, onLog: (String) -> Unit): Result<File> {
