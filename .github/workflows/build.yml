@@ -40,14 +40,22 @@ jobs:
           curl -L -o WebCompilerApp/app/src/main/assets/apktool.jar \
             https://github.com/iBotPeaches/Apktool/releases/latest/download/apktool_2.9.3.jar
 
-      # Step 3: Build WebCompilerApp
+      # Step 3: Generate debug keystore for signing the WebCompilerApp APK
+      - name: Generate debug keystore
+        run: |
+          keytool -genkey -v -keystore WebCompilerApp/debug.keystore \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 \
+            -validity 10000 -storepass android -keypass android \
+            -dname "CN=Debug, OU=Dev, O=WebCompiler, L=City, ST=State, C=US"
+
+      # Step 4: Build WebCompilerApp
       - name: Build WebCompilerApp APK
         run: |
           cd WebCompilerApp
           chmod +x gradlew
           ./gradlew assembleRelease
 
-      # Step 4: Upload APK
+      # Step 5: Upload APK
       - uses: actions/upload-artifact@v4
         with:
           name: WebCompiler-APK
