@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp">
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/appNameInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:hint="App Name"
+            app:layout_constraintEnd_toStartOf="@+id/packageInput"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="MyApp" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/packageInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:hint="Package"
+            android:layout_marginStart="8dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/appNameInput"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="com.myapp" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:id="@+id/permissionLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Permissions:"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/packageInput" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/permissionGroup"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            app:singleSelection="false"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/permissionLabel">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipCamera"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Camera" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipLocation"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Location" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipNotifications"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Notifications" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipStorage"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Storage" />
+
+        </com.google.android.material.chip.ChipGroup>
+
+        <TextView
+            android:id="@+id/codeLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="HTML Code (or use file picker below):"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/permissionGroup" />
+
+        <EditText
+            android:id="@+id/codeInput"
+            android:layout_width="0dp"
+            android:layout_height="200dp"
+            android:gravity="top"
+            android:inputType="textMultiLine"
+            android:scrollbars="vertical"
+            android:background="@android:drawable/editbox_background"
+            android:padding="8dp"
+            android:textSize="12sp"
+            android:typeface="monospace"
+            android:layout_marginTop="8dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/codeLabel" />
+
+        <Button
+            android:id="@+id/selectFileBtn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Select HTML/zip File"
+            android:layout_marginTop="8dp"
+            app:layout_constraintEnd_toStartOf="@+id/buildBtn"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/codeInput" />
+
+        <Button
+            android:id="@+id/buildBtn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Build APK"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="8dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/selectFileBtn"
+            app:layout_constraintTop_toBottomOf="@+id/codeInput" />
+
+        <TextView
+            android:id="@+id/logLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Build Log:"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/buildBtn" />
+
+        <ScrollView
+            android:id="@+id/logScroll"
+            android:layout_width="0dp"
+            android:layout_height="200dp"
+            android:layout_marginTop="8dp"
+            android:background="#1a1a2e"
+            android:padding="8dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/logLabel">
+
+            <TextView
+                android:id="@+id/logOutput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Ready"
+                android:textColor="#00ff00"
+                android:textSize="11sp"
+                android:typeface="monospace" />
+
+        </ScrollView>
+
+        <Button
+            android:id="@+id/saveApkBtn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Save APK"
+            android:enabled="false"
+            android:layout_marginTop="16dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/logScroll" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</ScrollView>

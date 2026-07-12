@@ -1,0 +1,49 @@
+name: Build WebCompiler
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Step 1: Build WebViewTemplate → template.apk
+      - name: Build template APK
+        run: |
+          cd WebViewTemplate
+          chmod +x gradlew
+          ./gradlew assembleRelease
+          mkdir -p ../WebCompilerApp/app/src/main/assets
+          cp app/build/outputs/apk/release/app-release.apk \
+             ../WebCompilerApp/app/src/main/assets/template.apk
+
+      # Step 2: Download apktool.jar
+      - name: Download apktool
+        run: |
+          mkdir -p WebCompilerApp/app/src/main/assets
+          curl -L -o WebCompilerApp/app/src/main/assets/apktool.jar \
+            https://github.com/iBotPeaches/Apktool/releases/latest/download/apktool_2.9.3.jar
+
+      # Step 3: Build WebCompilerApp
+      - name: Build WebCompilerApp APK
+        run: |
+          cd WebCompilerApp
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      # Step 4: Upload APK
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WebCompiler-APK
+          path: WebCompilerApp/app/build/outputs/apk/release/*.apk

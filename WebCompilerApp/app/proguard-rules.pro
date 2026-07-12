@@ -1,0 +1,2 @@
+-keep class com.webcompiler.app.** { *; }
+-dontwarn org.bouncycastle.**
