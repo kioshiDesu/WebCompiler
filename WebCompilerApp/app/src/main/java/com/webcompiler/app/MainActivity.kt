@@ -90,7 +90,7 @@ class MainActivity : AppCompatActivity() {
 
             if (selectedIcon == null && index == 0) {
                 selectedIcon = name
-                imageView.setImageResource(android.R.drawable.ic_menu_compass)
+                imageView.setImageResource(android.R.drawable.ic_menu_gallery)
                 imageView.setColorFilter(android.graphics.Color.WHITE)
             }
 
@@ -104,7 +104,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 val iv = v as ImageView
-                iv.setImageResource(android.R.drawable.ic_menu_compass)
+                iv.setImageResource(android.R.drawable.ic_menu_gallery)
                 iv.setColorFilter(android.graphics.Color.WHITE)
             }
 
