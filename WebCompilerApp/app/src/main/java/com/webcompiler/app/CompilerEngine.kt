@@ -105,6 +105,15 @@ class CompilerEngine(private val context: Context) {
     }
 
     private fun patchManifest(data: ByteArray, permissions: Set<String>, onLog: (String) -> Unit): ByteArray {
+        try {
+            return patchManifestInternal(data, permissions, onLog)
+        } catch (e: Exception) {
+            onLog("  WARNING: Manifest patch failed (${e.message ?: "unknown"}), returning original")
+            return data
+        }
+    }
+
+    private fun patchManifestInternal(data: ByteArray, permissions: Set<String>, onLog: (String) -> Unit): ByteArray {
         val buf = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
 
         if ((buf.getShort().toInt() and 0xFFFF) != 0x0003) {
@@ -120,7 +129,7 @@ class CompilerEngine(private val context: Context) {
         val spHeaderSize = buf.getShort().toInt() and 0xFFFF
         val spChunkSize = buf.getInt()
         val spCount = buf.getInt()
-        buf.getInt()
+        val styleCount = buf.getInt()
         val spFlags = buf.getInt()
         val spStringsStart = buf.getInt()
         buf.getInt()
@@ -128,28 +137,54 @@ class CompilerEngine(private val context: Context) {
         val isUtf8 = (spFlags and 0x0100) != 0
 
         val offsets = IntArray(spCount) { buf.getInt() }
-        buf.getInt()
-        buf.getInt()
+        repeat(styleCount) { buf.getInt() }
 
         val poolData = ByteArray(spChunkSize - (buf.position() - stringPoolStart))
-        buf.get(poolData)
+        try {
+            buf.get(poolData)
+        } catch (_: Exception) {
+            onLog("  WARNING: String pool data truncated, skipping manifest patch")
+            return data
+        }
         val poolBuf = ByteBuffer.wrap(poolData).order(ByteOrder.LITTLE_ENDIAN)
 
         val strings = mutableListOf<String>()
         for (off in offsets) {
+            if (off < 0 || off >= poolData.size) { strings.add(""); continue }
             poolBuf.position(off)
             if (isUtf8) {
-                val len = poolBuf.get().toInt() and 0xFF
-                val arr = ByteArray(len)
-                poolBuf.get(arr)
-                if (poolBuf.hasRemaining()) poolBuf.get()
-                strings.add(String(arr, StandardCharsets.UTF_8))
+                try {
+                    val b1 = poolBuf.get().toInt() and 0xFF
+                    val charLen = if (b1 and 0x80 != 0)
+                        ((b1 and 0x7F) shl 8) or (poolBuf.get().toInt() and 0xFF)
+                    else b1
+                    val b2 = poolBuf.get().toInt() and 0xFF
+                    val byteLen = if (b2 and 0x80 != 0)
+                        ((b2 and 0x7F) shl 8) or (poolBuf.get().toInt() and 0xFF)
+                    else b2
+                    if (byteLen < 0 || poolBuf.remaining() < byteLen + 1) {
+                        strings.add(""); continue
+                    }
+                    val arr = ByteArray(byteLen)
+                    poolBuf.get(arr)
+                    poolBuf.get()
+                    strings.add(String(arr, StandardCharsets.UTF_8))
+                } catch (_: Exception) {
+                    strings.add("")
+                }
             } else {
-                val len = poolBuf.getShort().toInt() and 0xFFFF
-                val arr = ByteArray(len * 2)
-                poolBuf.get(arr)
-                if (poolBuf.hasRemaining()) poolBuf.getShort()
-                strings.add(String(arr, StandardCharsets.UTF_16LE))
+                try {
+                    val charLen = poolBuf.getShort().toInt() and 0xFFFF
+                    if (charLen < 0 || poolBuf.remaining() < charLen * 2 + 2) {
+                        strings.add(""); continue
+                    }
+                    val arr = ByteArray(charLen * 2)
+                    poolBuf.get(arr)
+                    poolBuf.getShort()
+                    strings.add(String(arr, StandardCharsets.UTF_16LE))
+                } catch (_: Exception) {
+                    strings.add("")
+                }
             }
         }
 
