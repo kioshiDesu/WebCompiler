@@ -65,28 +65,28 @@
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipCamera"
-                style="@style/Widget.Material3.Chip.Filter"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Camera" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipLocation"
-                style="@style/Widget.Material3.Chip.Filter"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Location" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipNotifications"
-                style="@style/Widget.Material3.Chip.Filter"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Notifications" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipStorage"
-                style="@style/Widget.Material3.Chip.Filter"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Storage" />

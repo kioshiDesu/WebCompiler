@@ -1,8 +1,1 @@
 -keep class com.webcompiler.app.** { *; }
--keep class org.bouncycastle.** { *; }
--keep class org.bouncycastle.cms.** { *; }
--keep class org.bouncycastle.operator.** { *; }
--keep class org.bouncycastle.asn1.** { *; }
--keep class org.bouncycastle.cert.** { *; }
--keep class org.bouncycastle.jcajce.** { *; }
--dontwarn org.bouncycastle.**

@@ -55,5 +55,6 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    implementation("org.bouncycastle:bcpkix-jdk15on:1.70")
+    implementation("com.android.tools.build:apksig:8.2.0")
+
 }
