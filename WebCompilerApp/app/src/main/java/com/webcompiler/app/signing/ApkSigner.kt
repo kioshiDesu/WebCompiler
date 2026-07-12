@@ -1,7 +1,6 @@
 package com.webcompiler.app.signing
 
 import com.android.apksig.ApkSigner
-import com.android.apksig.SignerConfig
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.math.BigInteger
@@ -49,7 +48,7 @@ class ApkSigner {
             ks.outputStream().use { keyStore.store(it, "android".toCharArray()) }
         }
 
-        val signerConfig = SignerConfig.Builder("CERT", privateKey, listOf(certificate)).build()
+        val signerConfig = ApkSigner.SignerConfig.Builder("CERT", privateKey, listOf(certificate)).build()
 
         ApkSigner.Builder(listOf(signerConfig))
             .setInputApk(inputApk)
