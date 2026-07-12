@@ -20,12 +20,8 @@ if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
     echo "=== SUCCESS ==="
     echo "APK: app/build/outputs/apk/release/app-release.apk"
     echo ""
-    echo "NOTE: For local builds, place these files in app/src/main/assets/"
-    echo "before building (or the app will prompt on first run):"
-    echo "  - apktool.jar  (download from GitHub)"
-    echo "  - template.apk (build from ../WebViewTemplate/)"
-    echo ""
-    echo "For CI builds (GitHub Actions), assets are bundled automatically."
+    echo "For CI builds (GitHub Actions), template.apk is built and bundled automatically."
+    echo "For local builds, place template.apk in app/src/main/assets/ before building."
 else
     echo "=== BUILD FAILED ==="
 fi

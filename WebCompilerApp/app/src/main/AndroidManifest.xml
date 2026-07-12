@@ -10,7 +10,7 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@android:drawable/ic_menu_compass"
+        android:icon="@drawable/ic_launcher"
         android:label="WebCompiler"
         android:supportsRtl="true"
         android:theme="@style/Theme.WebCompiler">

@@ -94,6 +94,33 @@
         </com.google.android.material.chip.ChipGroup>
 
         <TextView
+            android:id="@+id/iconLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="App Icon:"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/permissionGroup" />
+
+        <HorizontalScrollView
+            android:id="@+id/iconScroll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/iconLabel">
+
+            <LinearLayout
+                android:id="@+id/iconContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+
+        </HorizontalScrollView>
+
+        <TextView
             android:id="@+id/codeLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -110,7 +137,7 @@
             android:gravity="top"
             android:inputType="textMultiLine"
             android:scrollbars="vertical"
-            android:background="@android:drawable/editbox_background"
+            android:background="@android:color/transparent"
             android:padding="8dp"
             android:textSize="12sp"
             android:typeface="monospace"
@@ -123,7 +150,7 @@
             android:id="@+id/selectFileBtn"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="Select HTML/zip File"
+                android:text="Select HTML/ZIP File"
             android:layout_marginTop="8dp"
             app:layout_constraintEnd_toStartOf="@+id/buildBtn"
             app:layout_constraintStart_toStartOf="parent"

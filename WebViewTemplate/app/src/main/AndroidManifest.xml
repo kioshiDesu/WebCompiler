@@ -3,6 +3,16 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Pre-declared permissions (disabled by default, enabled by CompilerEngine) -->
+    <uses-permission android:name="android.permission.CAMERA"
+        android:maxSdkVersion="0" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="0" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"
+        android:maxSdkVersion="0" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="0" />
+
     <application
         android:allowBackup="false"
         android:icon="@android:drawable/ic_menu_compass"
