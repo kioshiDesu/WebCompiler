@@ -9,6 +9,7 @@ import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.Signature
 import java.security.cert.X509Certificate
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -29,10 +30,11 @@ class ApkSigner(
         val sigFile = createSignatureFile(manifest)
         val sigBlock = createSignatureBlock(sigFile, privateKey, certificate)
         val v1Apk = File(outputApk.absolutePath + ".v1temp")
-        try {
+try {
             writeSignedApk(inputApk, v1Apk, manifest, sigFile, sigBlock)
             verifyV1Temp(v1Apk)
             addV2SigningBlock(v1Apk, outputApk)
+            verifyFinalApk(outputApk)
         } finally {
             v1Apk.delete()
         }
@@ -53,6 +55,28 @@ class ApkSigner(
             val signers = cms.getSignerInfos().getSigners()
             if (signers.isEmpty()) {
                 throw IllegalStateException("No signers in CERT.RSA PKCS7")
+            }
+        }
+    }
+
+    private fun verifyFinalApk(apk: File) {
+        ZipFile(apk).use { zip ->
+            for (name in listOf("META-INF/MANIFEST.MF", "META-INF/CERT.SF", "META-INF/CERT.RSA")) {
+                val entry = zip.getEntry(name)
+                if (entry == null) {
+                    throw IllegalStateException("$name missing from final APK")
+                }
+                val data = zip.getInputStream(entry).readBytes()
+                if (data.isEmpty()) {
+                    throw IllegalStateException("$name is empty in final APK")
+                }
+            }
+            // Verify CERT.RSA parses and has signers
+            val rsaData = zip.getInputStream(zip.getEntry("META-INF/CERT.RSA")!!).readBytes()
+            val cms = org.bouncycastle.cms.CMSSignedData(rsaData)
+            val signers = cms.getSignerInfos().getSigners()
+            if (signers.isEmpty()) {
+                throw IllegalStateException("No signers in final APK CERT.RSA PKCS7")
             }
         }
     }
@@ -159,6 +183,11 @@ class ApkSigner(
 
                 for ((name, data) in newMetaInf) {
                     val ze = ZipEntry(name)
+                    ze.method = ZipEntry.STORED
+                    ze.size = data.size.toLong()
+                    val crc = CRC32()
+                    crc.update(data)
+                    ze.crc = crc.value
                     zos.putNextEntry(ze)
                     zos.write(data)
                     zos.closeEntry()
