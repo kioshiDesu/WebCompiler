@@ -3,23 +3,16 @@ package com.webcompiler.app.signing
 import java.io.File
 import java.security.MessageDigest
 import java.security.PrivateKey
-import java.security.Signature
 import java.security.cert.X509Certificate
-import java.util.Date
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
-import org.bouncycastle.asn1.ASN1EncodableVector
-import org.bouncycastle.asn1.ASN1Integer
-import org.bouncycastle.asn1.ASN1ObjectIdentifier
-import org.bouncycastle.asn1.ASN1Primitive
-import org.bouncycastle.asn1.ASN1Sequence
-import org.bouncycastle.asn1.DERNull
-import org.bouncycastle.asn1.DEROctetString
-import org.bouncycastle.asn1.DERUTCTime
-import org.bouncycastle.asn1.DLSequence
-import org.bouncycastle.asn1.DLSet
-import org.bouncycastle.asn1.DERTaggedObject
+import org.bouncycastle.cms.CMSSignedDataGenerator
+import org.bouncycastle.cms.CMSTypedData
+import org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
+import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder
 
 class ApkSigner(
     private val privateKey: PrivateKey,
@@ -79,88 +72,27 @@ class ApkSigner(
         privateKey: PrivateKey,
         certificate: X509Certificate
     ): ByteArray {
-        val sigFileDigest = MessageDigest.getInstance("SHA-256").digest(sigFile)
+        val certHolder = org.bouncycastle.cert.jcajce.JcaX509CertificateHolder(certificate)
+        val certStruct = certHolder.toASN1Structure()
 
-        fun seq(vararg items: org.bouncycastle.asn1.ASN1Encodable): DLSequence {
-            val v = ASN1EncodableVector()
-            for (item in items) v.add(item)
-            return DLSequence(v)
+        val signerBuilder = JcaSignerInfoGeneratorBuilder(
+            JcaDigestCalculatorProviderBuilder().build()
+        ).build(
+            JcaContentSignerBuilder("SHA256withRSA").build(privateKey),
+            certHolder
+        )
+
+        val gen = CMSSignedDataGenerator()
+        gen.addSignerInfoGenerator(signerBuilder)
+        gen.addCertificate(certStruct)
+
+        val content = object : CMSTypedData {
+            override fun getContentType() = org.bouncycastle.asn1.ASN1ObjectIdentifier("1.2.840.113549.1.7.1")
+            override fun getContent() = sigFile
+            override fun write(out: java.io.OutputStream) = out.write(sigFile)
         }
-
-        fun set(vararg items: org.bouncycastle.asn1.ASN1Encodable): DLSet {
-            val v = ASN1EncodableVector()
-            for (item in items) v.add(item)
-            return DLSet(v)
-        }
-
-        val attrContentType = seq(
-            ASN1ObjectIdentifier("1.2.840.113549.1.9.3"),
-            set(ASN1ObjectIdentifier("1.2.840.113549.1.7.1"))
-        )
-        val attrMessageDigest = seq(
-            ASN1ObjectIdentifier("1.2.840.113549.1.9.4"),
-            set(DEROctetString(sigFileDigest))
-        )
-        val attrSigningTime = seq(
-            ASN1ObjectIdentifier("1.2.840.113549.1.9.5"),
-            set(DERUTCTime(Date()))
-        )
-        val signedAttrs = set(attrContentType, attrMessageDigest, attrSigningTime)
-        val taggedSignedAttrs = DERTaggedObject(false, 0, signedAttrs)
-
-        val toSign = taggedSignedAttrs.getEncoded("DER")
-        val sig = Signature.getInstance("SHA256WithRSA").apply {
-            initSign(privateKey)
-            update(toSign)
-        }.sign()
-
-        val dnParsed = ASN1Primitive.fromByteArray(certificate.issuerX500Principal.encoded) as ASN1Sequence
-        val issuerAndSn = seq(
-            dnParsed,
-            ASN1Integer(certificate.serialNumber)
-        )
-
-        val signerInfo = seq(
-            ASN1Integer(1),
-            issuerAndSn,
-            seq(
-                ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1"),
-                DERNull.INSTANCE
-            ),
-            taggedSignedAttrs,
-            seq(
-                ASN1ObjectIdentifier("1.2.840.113549.1.1.11"),
-                DERNull.INSTANCE
-            ),
-            DEROctetString(sig)
-        )
-
-        val certParsed = ASN1Primitive.fromByteArray(certificate.encoded) as ASN1Sequence
-        val certSet = set(certParsed)
-
-        val innerContentInfo = seq(
-            ASN1ObjectIdentifier("1.2.840.113549.1.7.1")
-        )
-
-        val signedData = seq(
-            ASN1Integer(1),
-            set(
-                seq(
-                    ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1"),
-                    DERNull.INSTANCE
-                )
-            ),
-            innerContentInfo,
-            DERTaggedObject(false, 0, certSet),
-            set(signerInfo)
-        )
-
-        val contentInfo = seq(
-            ASN1ObjectIdentifier("1.2.840.113549.1.7.2"),
-            DERTaggedObject(true, 0, signedData)
-        )
-
-        return contentInfo.getEncoded("DER")
+        val signedData = gen.generate(content, true)
+        return signedData.encoded
     }
 
     private fun writeSignedApk(
@@ -195,8 +127,14 @@ class ApkSigner(
                     zos.closeEntry()
                 }
 
+                val crc32 = CRC32()
                 for ((name, data) in newMetaInf) {
                     val ze = ZipEntry(name)
+                    ze.method = ZipEntry.STORED
+                    ze.size = data.size.toLong()
+                    crc32.reset()
+                    crc32.update(data)
+                    ze.crc = crc32.value
                     zos.putNextEntry(ze)
                     zos.write(data)
                     zos.closeEntry()

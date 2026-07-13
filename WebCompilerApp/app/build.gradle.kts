@@ -56,4 +56,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("org.bouncycastle:bcprov-jdk15to18:1.78.1")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.78.1")
+    implementation("org.bouncycastle:bctls-jdk15to18:1.78.1")
 }
