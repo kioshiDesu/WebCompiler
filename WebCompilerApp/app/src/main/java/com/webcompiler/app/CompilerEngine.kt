@@ -95,7 +95,7 @@ class CompilerEngine(private val context: Context) {
             val templateSize = templateApk.length()
             stepLog("[1/5] Extracting template APK", "${templateSize / 1024} KB")
 
-            val extracted = extractApk(templateApk, extractDir, onLog)
+            val extracted = extractApk(templateApk, extractDir)
             if (extracted.isEmpty()) {
                 return Result.failure(IllegalStateException("Template APK extraction produced no files"))
             }
@@ -108,7 +108,7 @@ class CompilerEngine(private val context: Context) {
 
             stepLog("[4/5] Repackaging APK")
             val unsignedApk = File(workDir, "unsigned.apk")
-            val repackageCount = repackageApk(extractDir, unsignedApk, onLog)
+            val repackageCount = repackageApk(extractDir, unsignedApk)
             if (!unsignedApk.exists() || unsignedApk.length() == 0L) {
                 return Result.failure(IllegalStateException("Repackaged APK is empty or missing"))
             }
@@ -151,7 +151,7 @@ class CompilerEngine(private val context: Context) {
         }
     }
 
-    private fun extractApk(apkFile: File, destDir: File, onLog: (String) -> Unit): List<String> {
+    private fun extractApk(apkFile: File, destDir: File): List<String> {
         destDir.mkdirs()
         val names = mutableListOf<String>()
         ZipFile(apkFile).use { zip ->
@@ -203,7 +203,7 @@ class CompilerEngine(private val context: Context) {
         if (config.iconPng != null) {
             val iconDirs = listOf("res/mipmap-hdpi", "res/mipmap-mdpi", "res/mipmap-xhdpi",
                 "res/mipmap-xxhdpi", "res/mipmap-xxxhdpi")
-            val scaled = scaleIcon(config.iconPng!!, onLog)
+            val scaled = scaleIcon(config.iconPng, onLog)
             if (scaled != null) {
                 for ((i, dir) in iconDirs.withIndex()) {
                     val f = File(extractDir, "$dir/ic_launcher.png")
@@ -233,7 +233,7 @@ class CompilerEngine(private val context: Context) {
         }
     }
 
-    private fun repackageApk(inputDir: File, outputApk: File, onLog: (String) -> Unit): Int {
+    private fun repackageApk(inputDir: File, outputApk: File): Int {
         val files = inputDir.walkTopDown().filter { it.isFile }.toList()
         if (files.isEmpty()) {
             throw IllegalStateException("No files to repackage")

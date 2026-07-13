@@ -1,7 +1,8 @@
 -keep class com.webcompiler.app.** { *; }
 -keep class org.bouncycastle.** { *; }
--keep class org.bouncycastle.asn1.** { *; }
--keep class org.bouncycastle.cms.** { *; }
--keep class org.bouncycastle.cert.** { *; }
--keep class org.bouncycastle.operator.** { *; }
 -keepattributes SourceFile,LineNumberTable
+
+-dontwarn javax.naming.**
+-dontwarn org.bouncycastle.cert.dane.**
+-dontwarn org.bouncycastle.jce.provider.X509LDAPCertStoreSpi
+-dontwarn org.bouncycastle.pqc.**
