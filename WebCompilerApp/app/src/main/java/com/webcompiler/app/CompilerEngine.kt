@@ -250,6 +250,13 @@ class CompilerEngine(private val context: Context) {
         val templateUtf16 = templatePkg.toByteArray(java.nio.charset.StandardCharsets.UTF_16LE)
         val newUtf16 = newPackage.toByteArray(java.nio.charset.StandardCharsets.UTF_16LE)
 
+        // AXML string pool entry: uint16 charCount (LE) followed by charCount UTF-16LE code units
+        val charCountBytes = byteArrayOf(
+            (templatePkg.length and 0xff).toByte(),
+            ((templatePkg.length shr 8) and 0xff).toByte()
+        )
+        val searchPattern = charCountBytes + templateUtf16
+
         fun ByteArray.indexOfSubarray(sub: ByteArray): Int {
             if (sub.isEmpty()) return 0
             for (i in 0..this.size - sub.size) {
@@ -261,20 +268,32 @@ class CompilerEngine(private val context: Context) {
             }
             return -1
         }
-        val idx = data.indexOfSubarray(templateUtf16)
+
+        var idx = data.indexOfSubarray(searchPattern)
         if (idx < 0) {
             onLog("  WARNING: Could not find package '$templatePkg' in binary manifest")
             return
         }
 
-        val padded = if (newUtf16.size <= templateUtf16.size) {
-            newUtf16 + ByteArray(templateUtf16.size - newUtf16.size)
+        // Update character count (2 bytes before string data)
+        val newCount = byteArrayOf(
+            (newPackage.length and 0xff).toByte(),
+            ((newPackage.length shr 8) and 0xff).toByte()
+        )
+        System.arraycopy(newCount, 0, data, idx, 2)
+        idx += 2  // now points to string data
+
+        if (newUtf16.size <= templateUtf16.size) {
+            System.arraycopy(newUtf16, 0, data, idx, newUtf16.size)
+            var pad = idx + newUtf16.size
+            while (pad < idx + templateUtf16.size) {
+                data[pad++] = 0
+            }
         } else {
             onLog("  WARNING: Package name too long, truncated to ${templatePkg.length} chars")
-            newUtf16.copyOf(templateUtf16.size)
+            System.arraycopy(newUtf16, 0, data, idx, templateUtf16.size)
         }
 
-        System.arraycopy(padded, 0, data, idx, padded.size)
         manifestFile.writeBytes(data)
         onLog("  Changed package: $templatePkg → $newPackage")
     }
