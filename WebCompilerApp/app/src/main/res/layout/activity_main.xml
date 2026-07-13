@@ -221,14 +221,27 @@
         </ScrollView>
 
         <Button
-            android:id="@+id/saveApkBtn"
+            android:id="@+id/installBtn"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-                android:text="Install APK"
+            android:text="Install APK"
             android:enabled="false"
             android:layout_marginTop="16dp"
-            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginEnd="4dp"
+            app:layout_constraintEnd_toStartOf="@+id/saveBtn"
             app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/logScroll" />
+
+        <Button
+            android:id="@+id/saveBtn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Save"
+            android:enabled="false"
+            android:layout_marginTop="16dp"
+            android:layout_marginStart="4dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/installBtn"
             app:layout_constraintTop_toBottomOf="@+id/logScroll" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>

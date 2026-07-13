@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -63,8 +65,11 @@ class MainActivity : AppCompatActivity() {
             if (!isBuilding) startBuild()
         }
 
-        binding.saveApkBtn.setOnClickListener {
+        binding.installBtn.setOnClickListener {
             installLatestApk()
+        }
+        binding.saveBtn.setOnClickListener {
+            saveToDownloads()
         }
     }
 
@@ -199,7 +204,8 @@ class MainActivity : AppCompatActivity() {
         )
 
         binding.buildBtn.isEnabled = false
-        binding.saveApkBtn.isEnabled = false
+        binding.installBtn.isEnabled = false
+        binding.saveBtn.isEnabled = false
         binding.logOutput.text = ""
         isBuilding = true
 
@@ -213,12 +219,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }.onSuccess {
                 runOnUiThread {
-                    val dest = autoSaveToDownloads()
                     binding.logOutput.append("\nBuild successful!\n")
-                    if (dest != null) {
-                        binding.logOutput.append("Saved to Downloads/${dest.name}\n")
-                    }
-                    binding.saveApkBtn.isEnabled = true
+                    binding.installBtn.isEnabled = true
+                    binding.saveBtn.isEnabled = true
                 }
             }.onFailure { err ->
                 runOnUiThread {
@@ -280,37 +283,55 @@ class MainActivity : AppCompatActivity() {
             ?: File(getExternalFilesDir(null) ?: filesDir, "template.apk")
     }
 
-    private fun autoSaveToDownloads(): File? {
-        val outputDir = File(getExternalFilesDir(null), "WebCompiler")
-        val apks = outputDir.listFiles { f -> f.extension == "apk" }
-        if (apks.isNullOrEmpty()) return null
-        val apk = apks.maxByOrNull { it.lastModified() } ?: return null
-        val downloadsDir = File("/storage/emulated/0/Download")
-        if (!downloadsDir.exists()) return null
-        val dest = File(downloadsDir, apk.name)
-        return try {
-            apk.copyTo(dest, overwrite = true)
-            dest
-        } catch (_: Exception) { null }
-    }
-
     private fun installLatestApk() {
-        val dest = autoSaveToDownloads()
-        if (dest == null || !dest.exists()) {
+        val apk = latestApk()
+        if (apk == null || !apk.exists()) {
             toast("No APK to install")
             return
         }
         try {
-            val uri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", dest)
+            val uri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", apk)
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (apk.exists()) {
+                    apk.delete()
+                    toast("APK cleared after install")
+                }
+            }, 3000)
         } catch (e: Exception) {
             toast("Cannot open installer: ${e.message}")
         }
+    }
+
+    private fun saveToDownloads() {
+        val apk = latestApk()
+        if (apk == null || !apk.exists()) {
+            toast("No APK to save")
+            return
+        }
+        val downloadsDir = File("/storage/emulated/0/Download")
+        if (!downloadsDir.exists()) {
+            toast("Downloads directory not accessible")
+            return
+        }
+        val dest = File(downloadsDir, apk.name)
+        try {
+            apk.copyTo(dest, overwrite = true)
+            toast("Saved to Downloads/${dest.name}")
+        } catch (e: Exception) {
+            toast("Save failed: ${e.message}")
+        }
+    }
+
+    private fun latestApk(): File? {
+        val outputDir = File(getExternalFilesDir(null), "WebCompiler")
+        val apks = outputDir.listFiles { f -> f.extension == "apk" }
+        return apks?.maxByOrNull { it.lastModified() }
     }
 
     private fun toast(msg: String) {
