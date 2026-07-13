@@ -49,14 +49,30 @@ jobs:
             -validity 10000 -storepass android -keypass android \
             -dname "CN=Debug, OU=Dev, O=WebCompiler, L=City, ST=State, C=US"
 
-      # Step 4: Build WebCompilerApp (signed with debug key)
+      # Step 4: Export runtime signing keys from the same keystore used to sign the app
+      - name: Export runtime signing keys
+        run: |
+          keytool -importkeystore \
+            -srckeystore WebCompilerApp/debug.keystore -srcstorepass android \
+            -srcalias androiddebugkey -srckeypass android \
+            -destkeystore /tmp/export.p12 -deststorepass android -deststoretype PKCS12
+          openssl pkcs12 -in /tmp/export.p12 -passin pass:android \
+            -nokeys | openssl x509 -outform DER \
+            -out WebCompilerApp/app/src/main/res/raw/cert.der
+          openssl pkcs12 -in /tmp/export.p12 -passin pass:android \
+            -nocerts -nodes | openssl pkcs8 -topk8 -inform PEM \
+            -outform DER -nocrypt \
+            -out WebCompilerApp/app/src/main/res/raw/key.der
+          rm /tmp/export.p12
+
+      # Step 5: Build WebCompilerApp (signed with debug key)
       - name: Build WebCompilerApp APK
         run: |
           cd WebCompilerApp
           chmod +x gradlew
           ./gradlew assembleRelease
 
-      # Step 5: Upload APK
+      # Step 6: Upload APK
       - uses: actions/upload-artifact@v4
         with:
           name: WebCompiler-APK
