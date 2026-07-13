@@ -102,6 +102,7 @@ class CompilerEngine(private val context: Context) {
             stepLog("[1/5] Extracted ${extracted.size} entries")
 
             stepLog("[2/5] Preparing AndroidManifest.xml")
+            patchPackageName(extractDir, config.packageName, onLog)
 
             stepLog("[3/5] Injecting assets")
             injectAssets(extractDir, config, onLog)
@@ -231,6 +232,40 @@ class CompilerEngine(private val context: Context) {
             onLog("  WARNING: Icon scaling failed: ${e.message}")
             null
         }
+    }
+
+    private fun patchPackageName(extractDir: File, newPackage: String, onLog: (String) -> Unit) {
+        if (newPackage.isBlank()) {
+            onLog("  Package name is empty, keeping default")
+            return
+        }
+        val manifestFile = File(extractDir, "AndroidManifest.xml")
+        if (!manifestFile.exists()) {
+            onLog("  WARNING: AndroidManifest.xml not found, skipping")
+            return
+        }
+
+        val data = manifestFile.readBytes()
+        val templatePkg = "com.webview.blank"
+        val templateUtf16 = templatePkg.toByteArray(java.nio.charset.StandardCharsets.UTF_16LE)
+        val newUtf16 = newPackage.toByteArray(java.nio.charset.StandardCharsets.UTF_16LE)
+
+        val idx = data.indexOf(templateUtf16)
+        if (idx < 0) {
+            onLog("  WARNING: Could not find package '$templatePkg' in binary manifest")
+            return
+        }
+
+        val padded = if (newUtf16.size <= templateUtf16.size) {
+            newUtf16 + ByteArray(templateUtf16.size - newUtf16.size)
+        } else {
+            onLog("  WARNING: Package name too long, truncated to ${templatePkg.length} chars")
+            newUtf16.copyOf(templateUtf16.size)
+        }
+
+        System.arraycopy(padded, 0, data, idx, padded.size)
+        manifestFile.writeBytes(data)
+        onLog("  Changed package: $templatePkg → $newPackage")
     }
 
     private fun repackageApk(inputDir: File, outputApk: File): Int {

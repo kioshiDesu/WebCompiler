@@ -198,7 +198,7 @@ class ApkSigner(
         val searchStart = maxOf(0L, fileLen - 22 - 65535)
         for (pos in fileLen - 22 downTo searchStart) {
             raf.seek(pos)
-            if (raf.readInt() == 0x06054b50) {
+            if (Integer.reverseBytes(raf.readInt()) == 0x06054b50) {
                 raf.seek(pos + 20)
                 val commentLen = raf.readUnsignedShort()
                 if (pos + 22 + commentLen == fileLen) {
