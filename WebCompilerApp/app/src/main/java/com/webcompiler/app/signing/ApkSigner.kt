@@ -1,20 +1,24 @@
 package com.webcompiler.app.signing
 
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.math.BigInteger
 import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.Signature
 import java.security.cert.X509Certificate
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
-import javax.security.auth.x500.X500Principal
+import org.bouncycastle.asn1.ASN1Integer
+import org.bouncycastle.asn1.ASN1ObjectIdentifier
+import org.bouncycastle.asn1.ASN1Primitive
+import org.bouncycastle.asn1.ASN1Sequence
+import org.bouncycastle.asn1.DERNull
+import org.bouncycastle.asn1.DEROctetString
+import org.bouncycastle.asn1.DERUTCTime
+import org.bouncycastle.asn1.DLSequence
+import org.bouncycastle.asn1.DLSet
+import org.bouncycastle.asn1.DERTaggedObject
 
 class ApkSigner(
     private val privateKey: PrivateKey,
@@ -74,83 +78,74 @@ class ApkSigner(
         privateKey: PrivateKey,
         certificate: X509Certificate
     ): ByteArray {
-        val digest = MessageDigest.getInstance("SHA-256").digest(sigFile)
+        val sigFileDigest = MessageDigest.getInstance("SHA-256").digest(sigFile)
 
-        val attrsInner = DerWriter().apply {
-            writeSequence {
-                writeOid("1.2.840.113549.1.9.3")
-                writeSet { writeOid("1.2.840.113549.1.7.1") }
-            }
-            writeSequence {
-                writeOid("1.2.840.113549.1.9.4")
-                writeSet { writeOctetString(digest) }
-            }
-            writeSequence {
-                writeOid("1.2.840.113549.1.9.5")
-                writeSet { writeUtcTime(Date()) }
-            }
-        }.toByteArray()
+        val attrContentType = DLSequence(
+            ASN1ObjectIdentifier("1.2.840.113549.1.9.3"),
+            DLSet(ASN1ObjectIdentifier("1.2.840.113549.1.7.1"))
+        )
+        val attrMessageDigest = DLSequence(
+            ASN1ObjectIdentifier("1.2.840.113549.1.9.4"),
+            DLSet(DEROctetString(sigFileDigest))
+        )
+        val attrSigningTime = DLSequence(
+            ASN1ObjectIdentifier("1.2.840.113549.1.9.5"),
+            DLSet(DERUTCTime(Date()))
+        )
+        val signedAttrs = DLSet(attrContentType, attrMessageDigest, attrSigningTime)
 
-        val signedAttrs = DerWriter().apply {
-            writeContextTaggedSet(0) { writeRaw(attrsInner) }
-        }.toByteArray()
-
+        val signedAttrsDer = signedAttrs.getEncoded("DER")
         val sig = Signature.getInstance("SHA256WithRSA").apply {
             initSign(privateKey)
-            update(signedAttrs)
+            update(signedAttrsDer)
         }.sign()
 
-        val dn = certificate.issuerX500Principal
+        val issuerAndSn = DLSequence(
+            DLSequence(certificate.issuerX500Principal.encoded),
+            ASN1Integer(certificate.serialNumber)
+        )
 
-        val signerInfo = DerWriter().apply {
-            writeSequence {
-                writeInteger(BigInteger.ONE)
-                writeSequence {
-                    writeRaw(dn.encoded)
-                    writeInteger(certificate.serialNumber)
-                }
-                writeSequence {
-                    writeOid("2.16.840.1.101.3.4.2.1")
-                    writeNull()
-                }
-                writeRaw(signedAttrs)
-                writeSequence {
-                    writeOid("1.2.840.113549.1.1.11")
-                    writeNull()
-                }
-                writeOctetString(sig)
-            }
-        }.toByteArray()
+        val signerInfo = DLSequence(
+            ASN1Integer(1),
+            issuerAndSn,
+            DLSequence(
+                ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1"),
+                DERNull.INSTANCE
+            ),
+            DERTaggedObject(false, 0, signedAttrs),
+            DLSequence(
+                ASN1ObjectIdentifier("1.2.840.113549.1.1.11"),
+                DERNull.INSTANCE
+            ),
+            DEROctetString(sig)
+        )
 
-        val signedData = DerWriter().apply {
-            writeSequence {
-                writeInteger(BigInteger.ONE)
-                writeSet {
-                    writeSequence {
-                        writeOid("2.16.840.1.101.3.4.2.1")
-                        writeNull()
-                    }
-                }
-                writeSequence {
-                    writeOid("1.2.840.113549.1.7.1")
-                }
-                writeContextTaggedSet(0) { writeRaw(certificate.encoded) }
-                writeSet { writeRaw(signerInfo) }
-            }
-        }.toByteArray()
+        val certSeq = ASN1Primitive.fromByteArray(certificate.encoded) as ASN1Sequence
+        val certSet = DLSet(certSeq)
 
-        return DerWriter().apply {
-            writeSequence {
-                writeOid("1.2.840.113549.1.7.2")
-                writeContextSpecificExplicit(0) { writeRaw(signedData) }
-            }
-        }.toByteArray()
-    }
+        val innerContentInfo = DLSequence(
+            ASN1ObjectIdentifier("1.2.840.113549.1.7.1")
+        )
 
-    private fun DerWriter.writeContextTaggedSet(tag: Int, block: DerWriter.() -> Unit) {
-        val nested = DerWriter()
-        nested.block()
-        write(0xA0 + tag, nested.toByteArray())
+        val signedData = DLSequence(
+            ASN1Integer(1),
+            DLSet(
+                DLSequence(
+                    ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1"),
+                    DERNull.INSTANCE
+                )
+            ),
+            innerContentInfo,
+            DERTaggedObject(false, 0, certSet),
+            DLSet(signerInfo)
+        )
+
+        val contentInfo = DLSequence(
+            ASN1ObjectIdentifier("1.2.840.113549.1.7.2"),
+            DERTaggedObject(true, 0, signedData)
+        )
+
+        return contentInfo.getEncoded("DER")
     }
 
     private fun writeSignedApk(
@@ -193,111 +188,5 @@ class ApkSigner(
                 }
             }
         }
-    }
-
-    private class DerWriter {
-        private val out = ByteArrayOutputStream()
-
-        fun write(tag: Int, bytes: ByteArray) {
-            out.write(tag)
-            writeLength(bytes.size)
-            out.write(bytes)
-        }
-
-        fun writeSequence(block: DerWriter.() -> Unit) {
-            val nested = DerWriter()
-            nested.block()
-            write(0x30, nested.toByteArray())
-        }
-
-        fun writeSet(block: DerWriter.() -> Unit) {
-            val nested = DerWriter()
-            nested.block()
-            write(0x31, nested.toByteArray())
-        }
-
-        fun writeInteger(value: BigInteger) {
-            write(0x02, value.toByteArray())
-        }
-
-        fun writeOctetString(bytes: ByteArray) {
-            write(0x04, bytes)
-        }
-
-        fun writeNull() {
-            out.write(0x05)
-            out.write(0x00)
-        }
-
-        fun writeOid(oid: String) {
-            val parts = oid.split(".").map { it.toInt() }
-            val buf = ByteArrayOutputStream()
-            buf.write(40 * parts[0] + parts[1])
-            for (i in 2 until parts.size) {
-                writeBase128(buf, parts[i])
-            }
-            write(0x06, buf.toByteArray())
-        }
-
-        fun writeBitString(bytes: ByteArray) {
-            val buf = ByteArrayOutputStream()
-            buf.write(0x00)
-            buf.write(bytes)
-            write(0x03, buf.toByteArray())
-        }
-
-        fun writeUtcTime(date: Date) {
-            val fmt = SimpleDateFormat("yyMMddHHmmss'Z'", Locale.US)
-            fmt.timeZone = TimeZone.getTimeZone("UTC")
-            write(0x17, fmt.format(date).toByteArray(Charsets.US_ASCII))
-        }
-
-        fun writeGeneralizedTime(date: Date) {
-            val fmt = SimpleDateFormat("yyyyMMddHHmmss'Z'", Locale.US)
-            fmt.timeZone = TimeZone.getTimeZone("UTC")
-            write(0x18, fmt.format(date).toByteArray(Charsets.US_ASCII))
-        }
-
-        fun writeRaw(bytes: ByteArray) {
-            out.write(bytes)
-        }
-
-        fun writeContextSpecificExplicit(tag: Int, block: DerWriter.() -> Unit) {
-            val nested = DerWriter()
-            nested.block()
-            write(0xA0 + tag, nested.toByteArray())
-        }
-
-        private fun writeLength(length: Int) {
-            if (length < 128) {
-                out.write(length)
-            } else {
-                val bytes = ByteArrayOutputStream()
-                var len = length
-                while (len > 0) {
-                    bytes.write(len and 0xFF)
-                    len = len shr 8
-                }
-                val lenBytes = bytes.toByteArray().reversedArray()
-                out.write(0x80 or lenBytes.size)
-                out.write(lenBytes)
-            }
-        }
-
-        private fun writeBase128(out: ByteArrayOutputStream, value: Int) {
-            val parts = mutableListOf<Int>()
-            var v = value
-            parts.add(v and 0x7F)
-            v = v shr 7
-            while (v > 0) {
-                parts.add((v and 0x7F) or 0x80)
-                v = v shr 7
-            }
-            for (b in parts.reversed()) {
-                out.write(b)
-            }
-        }
-
-        fun toByteArray(): ByteArray = out.toByteArray()
     }
 }

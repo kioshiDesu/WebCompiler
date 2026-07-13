@@ -1,1 +1,3 @@
 -keep class com.webcompiler.app.** { *; }
+-keep class org.bouncycastle.asn1.** { *; }
+-keepattributes SourceFile,LineNumberTable

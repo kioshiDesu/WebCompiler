@@ -112,6 +112,49 @@
                 android:layout_height="wrap_content"
                 android:text="Phone" />
 
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipInternet"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Internet"
+                android:checked="true" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipNetwork"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Network" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipWifi"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WiFi" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipBluetooth"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Bluetooth" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipNfc"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="NFC" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipVibrate"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Vibrate" />
+
         </com.google.android.material.chip.ChipGroup>
 
         <TextView
@@ -171,10 +214,22 @@
             android:id="@+id/selectFileBtn"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-                android:text="Select HTML/ZIP File"
+            android:text="Select HTML/ZIP File"
+            android:layout_marginTop="8dp"
+            app:layout_constraintEnd_toStartOf="@+id/clearFileBtn"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/codeInput" />
+
+        <Button
+            android:id="@+id/clearFileBtn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Clear"
+            android:visibility="gone"
+            android:layout_marginStart="8dp"
             android:layout_marginTop="8dp"
             app:layout_constraintEnd_toStartOf="@+id/buildBtn"
-            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/selectFileBtn"
             app:layout_constraintTop_toBottomOf="@+id/codeInput" />
 
         <Button
@@ -185,8 +240,20 @@
             android:layout_marginStart="8dp"
             android:layout_marginTop="8dp"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@+id/selectFileBtn"
+            app:layout_constraintStart_toEndOf="@+id/clearFileBtn"
             app:layout_constraintTop_toBottomOf="@+id/codeInput" />
+
+        <TextView
+            android:id="@+id/fileInfo"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="11sp"
+            android:textColor="#888888"
+            android:layout_marginTop="4dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/selectFileBtn" />
 
         <TextView
             android:id="@+id/logLabel"

@@ -2,5 +2,5 @@
 <paths>
     <external-files-path name="output" path="WebCompiler/" />
     <external-path name="downloads" path="Download/" />
-    <cache-path name="cache" path="/" />
+    <cache-path name="cache" path="compiler/" />
 </paths>

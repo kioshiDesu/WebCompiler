@@ -1,6 +1,7 @@
 package com.webcompiler.app
 
 import android.content.Context
+import android.util.Log
 import com.webcompiler.app.signing.ApkSigner
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -46,7 +47,13 @@ class CompilerEngine(private val context: Context) {
         "STORAGE" to "android.permission.READ_EXTERNAL_STORAGE",
         "MICROPHONE" to "android.permission.RECORD_AUDIO",
         "CONTACTS" to "android.permission.READ_CONTACTS",
-        "PHONE" to "android.permission.READ_PHONE_STATE"
+        "PHONE" to "android.permission.READ_PHONE_STATE",
+        "INTERNET" to "android.permission.INTERNET",
+        "NETWORK" to "android.permission.ACCESS_NETWORK_STATE",
+        "WIFI" to "android.permission.ACCESS_WIFI_STATE",
+        "BLUETOOTH" to "android.permission.BLUETOOTH",
+        "NFC" to "android.permission.NFC",
+        "VIBRATE" to "android.permission.VIBRATE"
     )
 
     fun extractBundledAssets(destDir: File = context.filesDir): File? {
@@ -64,77 +71,132 @@ class CompilerEngine(private val context: Context) {
     }
 
     fun build(config: Config, onLog: (String) -> Unit): Result<File> {
+        val startMs = System.currentTimeMillis()
+
+        fun stepLog(step: String, detail: String = "") {
+            val elapsed = System.currentTimeMillis() - startMs
+            val ts = String.format("[%02d:%02d]", (elapsed / 60000) % 60, (elapsed / 1000) % 60)
+            onLog("$ts $step${if (detail.isNotEmpty()) " — $detail" else ""}")
+        }
+
         return try {
             workDir.deleteRecursively()
             workDir.mkdirs()
             outputDir.mkdirs()
-            // Clean old APKs from previous builds
             outputDir.listFiles { f -> f.extension == "apk" }?.forEach { it.delete() }
 
             val extractDir = File(workDir, "extracted")
             val templateApk = config.templateApk
 
-            onLog("[1/5] Extracting template APK...")
-            extractApk(templateApk, extractDir, onLog)
+            if (!templateApk.exists()) {
+                return Result.failure(IllegalStateException("Template APK not found: ${templateApk.absolutePath}"))
+            }
+            val templateSize = templateApk.length()
+            stepLog("[1/5] Extracting template APK", "${templateSize / 1024} KB")
 
-            onLog("[2/5] Preparing AndroidManifest.xml...")
+            val extracted = extractApk(templateApk, extractDir, onLog, stepLog)
+            if (extracted.isEmpty()) {
+                return Result.failure(IllegalStateException("Template APK extraction produced no files"))
+            }
+            stepLog("[1/5] Extracted ${extracted.size} entries")
 
-            onLog("[3/5] Injecting assets...")
-            injectAssets(extractDir, config, onLog)
+            stepLog("[2/5] Preparing AndroidManifest.xml")
 
-            onLog("[4/5] Repackaging APK...")
+            stepLog("[3/5] Injecting assets")
+            injectAssets(extractDir, config, onLog, stepLog)
+
+            stepLog("[4/5] Repackaging APK")
             val unsignedApk = File(workDir, "unsigned.apk")
-            repackageApk(extractDir, unsignedApk, onLog)
+            val repackageCount = repackageApk(extractDir, unsignedApk, onLog, stepLog)
+            if (!unsignedApk.exists() || unsignedApk.length() == 0L) {
+                return Result.failure(IllegalStateException("Repackaged APK is empty or missing"))
+            }
+            stepLog("[4/5] Repackaged $repackageCount entries (${unsignedApk.length() / 1024} KB)")
 
-            onLog("[5/5] Signing APK...")
+            stepLog("[5/5] Signing APK", "SHA-256 + RSA / BouncyCastle ASN.1")
             val finalApk = File(outputDir, "${config.appName.replace(" ", "")}.apk")
-            signer.sign(unsignedApk, finalApk)
+            try {
+                signer.sign(unsignedApk, finalApk)
+            } catch (e: Exception) {
+                Log.e("WebCompiler", "Signing step failed", e)
+                return Result.failure(Exception("Signing failed: ${e.message}"))
+            }
             unsignedApk.delete()
 
+            if (!finalApk.exists() || finalApk.length() == 0L) {
+                return Result.failure(IllegalStateException("Signed APK is missing or empty"))
+            }
+
             extractDir.deleteRecursively()
-            onLog("Done! APK saved to: ${finalApk.absolutePath}")
+
+            val elapsed = System.currentTimeMillis() - startMs
+            stepLog("Done! ${finalApk.length() / 1024} KB signed APK → ${finalApk.name}", "took ${elapsed / 1000}s")
+            onLog("")
+
             Result.success(finalApk)
+        } catch (e: java.util.zip.ZipException) {
+            Log.e("WebCompiler", "ZIP error during build", e)
+            onLog("ERROR: Corrupt or invalid ZIP file: ${e.message}")
+            Result.failure(e)
+        } catch (e: java.security.GeneralSecurityException) {
+            Log.e("WebCompiler", "Security error during build", e)
+            onLog("ERROR: Cryptographic operation failed: ${e.message}")
+            Result.failure(e)
         } catch (e: Exception) {
+            Log.e("WebCompiler", "Build failed unexpectedly", e)
             onLog("ERROR: ${e.message ?: e.javaClass.simpleName}")
-            e.printStackTrace()
             outputDir.listFiles { f -> f.extension == "apk" }?.forEach { it.delete() }
             Result.failure(e)
         }
     }
 
-    private fun extractApk(apkFile: File, destDir: File, onLog: (String) -> Unit) {
+    private fun extractApk(apkFile: File, destDir: File, onLog: (String) -> Unit, stepLog: (String, String) -> Unit): List<String> {
         destDir.mkdirs()
-        var count = 0
+        val names = mutableListOf<String>()
         ZipFile(apkFile).use { zip ->
             for (entry in zip.entries().asSequence()) {
                 val file = File(destDir, entry.name)
                 if (entry.isDirectory) file.mkdirs()
                 else {
-                    file.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { i -> file.outputStream().use { o -> i.copyTo(o) } }
-                    count++
+                    try {
+                        file.parentFile?.mkdirs()
+                        zip.getInputStream(entry).use { i -> file.outputStream().use { o -> i.copyTo(o) } }
+                        names.add(entry.name)
+                    } catch (e: Exception) {
+                        Log.w("WebCompiler", "Failed to extract ${entry.name}: ${e.message}")
+                    }
                 }
             }
         }
-        onLog("  Extracted template")
+        return names
     }
 
-
-
-    private fun injectAssets(extractDir: File, config: Config, onLog: (String) -> Unit) {
+    private fun injectAssets(extractDir: File, config: Config, onLog: (String) -> Unit, stepLog: (String, String) -> Unit) {
         val assetsDir = File(extractDir, "assets")
         assetsDir.mkdirs()
 
         if (config.zipEntries != null && config.zipEntries.isNotEmpty()) {
+            var injected = 0
             for ((path, data) in config.zipEntries) {
+                if (data.size > 10 * 1024 * 1024) {
+                    Log.w("WebCompiler", "Skipping oversized asset: $path (${data.size / 1024 / 1024} MB)")
+                    onLog("  WARNING: Skipping oversized file: $path")
+                    continue
+                }
                 val targetFile = File(assetsDir, path)
                 targetFile.parentFile?.mkdirs()
                 targetFile.writeBytes(data)
+                injected++
             }
-            onLog("  Extracted ${config.zipEntries.size} files from zip into assets/")
+            stepLog("[3/5] Injected $injected files from zip into assets/")
         } else {
-            File(assetsDir, "index.html").writeText(config.htmlCode)
-            onLog("  Injected index.html")
+            val html = config.htmlCode
+            if (html.length > 5 * 1024 * 1024) {
+                Log.w("WebCompiler", "HTML code unusually large: ${html.length / 1024} KB")
+                onLog("  WARNING: HTML code is ${html.length / 1024} KB")
+            }
+            File(assetsDir, "index.html").writeText(html)
+            stepLog("[3/5] Injected index.html (${html.length / 1024} KB)")
         }
 
         if (config.iconPng != null) {
@@ -147,7 +209,7 @@ class CompilerEngine(private val context: Context) {
                     f.parentFile?.mkdirs()
                     f.writeBytes(scaled[i])
                 }
-                onLog("  Applied custom icon")
+                stepLog("[3/5] Applied custom icon across 5 densities")
             }
         }
     }
@@ -155,32 +217,41 @@ class CompilerEngine(private val context: Context) {
     private fun scaleIcon(originalPng: ByteArray, onLog: (String) -> Unit): List<ByteArray>? {
         return try {
             val bmp = android.graphics.BitmapFactory.decodeByteArray(originalPng, 0, originalPng.size) ?: return null
-            listOf(36, 48, 72, 96, 144).map { size ->
+            val result = listOf(36, 48, 72, 96, 144).map { size ->
                 val s = android.graphics.Bitmap.createScaledBitmap(bmp, size, size, true)
                 val os = ByteArrayOutputStream()
                 s.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, os)
                 s.recycle()
                 os.toByteArray()
-            }.also { bmp.recycle() }
+            }
+            bmp.recycle()
+            result
         } catch (e: Exception) {
             onLog("  WARNING: Icon scaling failed: ${e.message}")
             null
         }
     }
 
-    private fun repackageApk(inputDir: File, outputApk: File, onLog: (String) -> Unit) {
+    private fun repackageApk(inputDir: File, outputApk: File, onLog: (String) -> Unit, stepLog: (String, String) -> Unit): Int {
         val files = inputDir.walkTopDown().filter { it.isFile }.toList()
+        if (files.isEmpty()) {
+            throw IllegalStateException("No files to repackage")
+        }
         ZipOutputStream(outputApk.outputStream()).use { zos ->
             for (file in files) {
                 val entryName = file.relativeTo(inputDir).path
+                val data = file.readBytes()
+                if (data.isEmpty()) {
+                    Log.w("WebCompiler", "Skipping empty entry: $entryName")
+                    continue
+                }
                 val entry = ZipEntry(entryName)
                 entry.method = ZipEntry.DEFLATED
-                val data = file.readBytes()
                 zos.putNextEntry(entry)
                 zos.write(data)
                 zos.closeEntry()
             }
         }
-        onLog("  Repackaged ${files.size} entries")
+        return files.size
     }
 }

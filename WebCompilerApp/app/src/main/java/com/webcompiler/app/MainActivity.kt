@@ -1,5 +1,6 @@
 package com.webcompiler.app
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -9,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -44,8 +46,11 @@ class MainActivity : AppCompatActivity() {
         uri?.let {
             selectedFileUri = it
             selectedFileName = it.lastPathSegment ?: "file"
-            binding.codeInput.setText("File selected: ${selectedFileName}")
+            binding.codeInput.setText(readUriContent(it))
             binding.codeInput.isEnabled = false
+            binding.clearFileBtn.visibility = android.view.View.VISIBLE
+            binding.selectFileBtn.text = "Change File"
+            updateFileInfo()
         }
     }
 
@@ -59,6 +64,16 @@ class MainActivity : AppCompatActivity() {
 
         binding.selectFileBtn.setOnClickListener {
             filePicker.launch("*/*")
+        }
+
+        binding.clearFileBtn.setOnClickListener {
+            selectedFileUri = null
+            selectedFileName = null
+            binding.codeInput.setText("")
+            binding.codeInput.isEnabled = true
+            binding.clearFileBtn.visibility = android.view.View.GONE
+            binding.selectFileBtn.text = "Select HTML/ZIP File"
+            binding.fileInfo.text = ""
         }
 
         binding.buildBtn.setOnClickListener {
@@ -152,6 +167,27 @@ class MainActivity : AppCompatActivity() {
         return stream.toByteArray()
     }
 
+    private fun updateFileInfo() {
+        val uri = selectedFileUri ?: return
+        try {
+            val cursor = contentResolver.query(uri, null, null, null, null)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val sizeIdx = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (sizeIdx >= 0) {
+                        val bytes = it.getLong(sizeIdx)
+                        val size = when {
+                            bytes < 1024 -> "$bytes B"
+                            bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+                            else -> "%.1f MB".format(bytes.toDouble() / (1024 * 1024))
+                        }
+                        binding.fileInfo.text = "${selectedFileName ?: "file"} ($size)"
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun startBuild() {
         val templateFile = getTemplateFile()
         if (!templateFile.exists()) {
@@ -225,7 +261,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }.onFailure { err ->
                 runOnUiThread {
-                    binding.logOutput.append("\nBuild failed: ${err.message}\n")
+                    val msg = err.message ?: err.javaClass.simpleName
+                    binding.logOutput.append("\nBuild failed: $msg\n")
+                    Log.e("WebCompiler", "Build failed", err)
                 }
             }.also {
                 runOnUiThread {
@@ -233,7 +271,23 @@ class MainActivity : AppCompatActivity() {
                     binding.buildBtn.isEnabled = true
                 }
             }
-        }.start()
+        }.apply {
+            isDaemon = true
+            start()
+            Thread {
+                try {
+                    join(120_000)
+                    if (isAlive) {
+                        interrupt()
+                        runOnUiThread {
+                            binding.logOutput.append("\nBUILD TIMEOUT (120s)\n")
+                            isBuilding = false
+                            binding.buildBtn.isEnabled = true
+                        }
+                    }
+                } catch (_: InterruptedException) {}
+            }.start()
+        }
     }
 
     private fun getSelectedPermissions(): Set<String> {
@@ -266,8 +320,14 @@ class MainActivity : AppCompatActivity() {
                 var entry: ZipEntry? = zis.nextEntry
                 while (entry != null) {
                     if (!entry.isDirectory) {
+                        val name = entry.name
+                        if (name.contains("..") || name.startsWith("/")) {
+                            Log.w("WebCompiler", "Skipping suspicious zip entry: $name")
+                            entry = zis.nextEntry
+                            continue
+                        }
                         val data = zis.readBytes()
-                        entries[entry.name] = data
+                        entries[name] = data
                     }
                     entry = zis.nextEntry
                 }
@@ -295,6 +355,7 @@ class MainActivity : AppCompatActivity() {
                 setDataAndType(uri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             startActivity(intent)
             Handler(Looper.getMainLooper()).postDelayed({
@@ -303,8 +364,15 @@ class MainActivity : AppCompatActivity() {
                     toast("APK cleared after install")
                 }
             }, 3000)
+        } catch (e: ActivityNotFoundException) {
+            toast("No package installer found on device")
+            Log.e("WebCompiler", "Install failed: no installer", e)
+        } catch (e: SecurityException) {
+            toast("Permission denied: cannot access the APK")
+            Log.e("WebCompiler", "Install failed: security", e)
         } catch (e: Exception) {
             toast("Cannot open installer: ${e.message}")
+            Log.e("WebCompiler", "Install failed", e)
         }
     }
 
