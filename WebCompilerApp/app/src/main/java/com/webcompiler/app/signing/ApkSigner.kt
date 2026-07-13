@@ -1,5 +1,6 @@
 package com.webcompiler.app.signing
 
+import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
@@ -31,7 +32,12 @@ class ApkSigner(
         val v1Apk = File(outputApk.absolutePath + ".v1temp")
         try {
             writeSignedApk(inputApk, v1Apk, manifest, sigFile, sigBlock)
-            addV2SigningBlock(v1Apk, outputApk)
+            try {
+                addV2SigningBlock(v1Apk, outputApk)
+            } catch (e: Exception) {
+                Log.w("WebCompiler", "v2 signing failed, falling back to v1-only APK", e)
+                v1Apk.copyTo(outputApk, overwrite = true)
+            }
         } finally {
             v1Apk.delete()
         }
@@ -200,7 +206,7 @@ class ApkSigner(
             raf.seek(pos)
             if (Integer.reverseBytes(raf.readInt()) == 0x06054b50) {
                 raf.seek(pos + 20)
-                val commentLen = raf.readUnsignedShort()
+                val commentLen = raf.readUnsignedByte() or (raf.readUnsignedByte() shl 8)
                 if (pos + 22 + commentLen == fileLen) {
                     val eocd = ByteArray(22 + commentLen)
                     raf.seek(pos)
