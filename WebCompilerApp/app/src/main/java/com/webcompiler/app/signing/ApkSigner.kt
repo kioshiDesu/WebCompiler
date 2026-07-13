@@ -1,16 +1,9 @@
 package com.webcompiler.app.signing
 
-import android.util.Log
 import java.io.File
-import java.io.FileOutputStream
-import java.io.RandomAccessFile
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.security.PrivateKey
-import java.security.Signature
 import java.security.cert.X509Certificate
-import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -29,18 +22,7 @@ class ApkSigner(
         val manifest = createManifest(inputApk)
         val sigFile = createSignatureFile(manifest)
         val sigBlock = createSignatureBlock(sigFile, privateKey, certificate)
-        val v1Apk = File(outputApk.absolutePath + ".v1temp")
-        try {
-            writeSignedApk(inputApk, v1Apk, manifest, sigFile, sigBlock)
-            try {
-                addV2SigningBlock(v1Apk, outputApk)
-            } catch (e: Exception) {
-                Log.w("WebCompiler", "v2 signing failed, falling back to v1-only APK", e)
-                v1Apk.copyTo(outputApk, overwrite = true)
-            }
-        } finally {
-            v1Apk.delete()
-        }
+        writeSignedApk(inputApk, outputApk, manifest, sigFile, sigBlock)
     }
 
     private fun createManifest(apkFile: File): ByteArray {
@@ -143,177 +125,13 @@ class ApkSigner(
                     zos.closeEntry()
                 }
 
-                val crc32 = CRC32()
                 for ((name, data) in newMetaInf) {
                     val ze = ZipEntry(name)
-                    ze.method = ZipEntry.STORED
-                    ze.size = data.size.toLong()
-                    crc32.reset()
-                    crc32.update(data)
-                    ze.crc = crc32.value
                     zos.putNextEntry(ze)
                     zos.write(data)
                     zos.closeEntry()
                 }
             }
         }
-    }
-
-    // ── v2 APK Signature Scheme ──────────────────────────────────────────────────
-
-    private fun addV2SigningBlock(input: File, output: File) {
-        val raf = RandomAccessFile(input, "r")
-        val (eocdOffset, eocdBytes) = try {
-            findEocd(raf)
-        } finally {
-            raf.close()
-        }
-
-        val cdSize = readUint32LE(eocdBytes, 12)
-        val cdOffset = readUint32LE(eocdBytes, 16)
-
-        RandomAccessFile(input, "r").use { reader ->
-            val beforeCd = ByteArray(cdOffset.toInt())
-            reader.seek(0)
-            reader.readFully(beforeCd)
-
-            val centralDir = ByteArray(cdSize.toInt())
-            reader.seek(cdOffset)
-            reader.readFully(centralDir)
-
-            val contentDigest = computeContentDigest(beforeCd, centralDir, eocdBytes)
-            val signedData = buildV2SignedData(contentDigest, certificate)
-            val signature = signV2SignedData(signedData)
-            val signerBlock = buildV2SignerBlock(signedData, signature, certificate)
-            val signingBlock = buildApkSigningBlock(signerBlock)
-
-            val newCdOffset = cdOffset + signingBlock.size.toLong()
-            writeUint32LE(eocdBytes, 16, newCdOffset)
-
-            FileOutputStream(output).use { out ->
-                out.write(beforeCd)
-                out.write(signingBlock)
-                out.write(centralDir)
-                out.write(eocdBytes)
-            }
-        }
-    }
-
-    private fun findEocd(raf: RandomAccessFile): Pair<Long, ByteArray> {
-        val fileLen = raf.length()
-        val searchStart = maxOf(0L, fileLen - 22 - 65535)
-        for (pos in fileLen - 22 downTo searchStart) {
-            raf.seek(pos)
-            if (Integer.reverseBytes(raf.readInt()) == 0x06054b50) {
-                raf.seek(pos + 20)
-                val commentLen = raf.readUnsignedByte() or (raf.readUnsignedByte() shl 8)
-                if (pos + 22 + commentLen == fileLen) {
-                    val eocd = ByteArray(22 + commentLen)
-                    raf.seek(pos)
-                    raf.readFully(eocd)
-                    return Pair(pos, eocd)
-                }
-            }
-        }
-        throw IllegalArgumentException("EOCD record not found in APK")
-    }
-
-    private fun computeContentDigest(
-        beforeCd: ByteArray,
-        centralDir: ByteArray,
-        eocdBytes: ByteArray
-    ): ByteArray {
-        val eocdCopy = eocdBytes.copyOf()
-        writeUint32LE(eocdCopy, 16, 0L)
-
-        val md = MessageDigest.getInstance("SHA-256")
-
-        fun writeChunk(data: ByteArray) {
-            md.update(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(data.size).array())
-            md.update(data)
-        }
-
-        writeChunk(beforeCd)
-        writeChunk(centralDir)
-        writeChunk(eocdCopy)
-
-        return md.digest()
-    }
-
-    private fun buildV2SignedData(digest: ByteArray, cert: X509Certificate): ByteArray {
-        val certDer = cert.encoded
-        val bb = ByteBuffer.allocate(4 + 4 + 32 + 4 + 4 + certDer.size + 4)
-            .order(ByteOrder.LITTLE_ENDIAN)
-        bb.putInt(1)                      // digest count
-        bb.putInt(0x0201)                 // SHA-256 content digest algorithm
-        bb.put(digest)                    // 32 bytes
-        bb.putInt(1)                      // certificate count
-        bb.putInt(certDer.size)
-        bb.put(certDer)
-        bb.putInt(0)                      // attribute count
-        return bb.array()
-    }
-
-    private fun signV2SignedData(signedData: ByteArray): ByteArray {
-        val sig = Signature.getInstance("SHA256withRSA")
-        sig.initSign(privateKey)
-        sig.update(signedData)
-        return sig.sign()
-    }
-
-    private fun buildV2SignerBlock(
-        signedData: ByteArray,
-        signature: ByteArray,
-        cert: X509Certificate
-    ): ByteArray {
-        val pubKey = cert.publicKey.encoded
-        val bb = ByteBuffer.allocate(
-            4 + signedData.size +
-            4 +
-            4 + 4 + signature.size +
-            4 + pubKey.size
-        ).order(ByteOrder.LITTLE_ENDIAN)
-        bb.putInt(signedData.size)
-        bb.put(signedData)
-        bb.putInt(1)                      // signature count
-        bb.putInt(0x0101)                 // RSA PKCS1v1.5 with SHA-256
-        bb.putInt(signature.size)
-        bb.put(signature)
-        bb.putInt(pubKey.size)
-        bb.put(pubKey)
-        return bb.array()
-    }
-
-    private fun buildApkSigningBlock(signerBlock: ByteArray): ByteArray {
-        val magic = "APK Sig Block 42".toByteArray(Charsets.US_ASCII)
-        val pairOverhead = 4L + 8L
-        val pairSize = pairOverhead + signerBlock.size.toLong()
-        val pairsSize = pairSize
-        val trailingSize = 8L + 16L
-        val totalSize = 8L + pairsSize + trailingSize
-        val blockSizeField = totalSize - 8L
-
-        val bb = ByteBuffer.allocate(totalSize.toInt()).order(ByteOrder.LITTLE_ENDIAN)
-        bb.putLong(blockSizeField)
-        bb.putInt(0x7109871a)              // v2 signer ID
-        bb.putLong(signerBlock.size.toLong())
-        bb.put(signerBlock)
-        bb.putLong(blockSizeField)
-        bb.put(magic)
-        return bb.array()
-    }
-
-    private fun readUint32LE(data: ByteArray, offset: Int): Long {
-        return ((data[offset + 3].toLong() and 0xff) shl 24) or
-               ((data[offset + 2].toLong() and 0xff) shl 16) or
-               ((data[offset + 1].toLong() and 0xff) shl 8) or
-               (data[offset].toLong() and 0xff)
-    }
-
-    private fun writeUint32LE(data: ByteArray, offset: Int, value: Long) {
-        data[offset] = (value and 0xff).toByte()
-        data[offset + 1] = ((value shr 8) and 0xff).toByte()
-        data[offset + 2] = ((value shr 16) and 0xff).toByte()
-        data[offset + 3] = ((value shr 24) and 0xff).toByte()
     }
 }

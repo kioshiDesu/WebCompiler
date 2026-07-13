@@ -9,7 +9,6 @@ import java.io.FileOutputStream
 import java.security.KeyFactory
 import java.security.cert.CertificateFactory
 import java.security.spec.PKCS8EncodedKeySpec
-import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -304,7 +303,6 @@ class CompilerEngine(private val context: Context) {
             throw IllegalStateException("No files to repackage")
         }
         ZipOutputStream(outputApk.outputStream()).use { zos ->
-            val crc32 = CRC32()
             for (file in files) {
                 val entryName = file.relativeTo(inputDir).path
                 val data = file.readBytes()
@@ -312,17 +310,7 @@ class CompilerEngine(private val context: Context) {
                     Log.w("WebCompiler", "Skipping empty entry: $entryName")
                     continue
                 }
-                val entry = ZipEntry(entryName)
-                if (entryName.startsWith("META-INF/")) {
-                    entry.method = ZipEntry.STORED
-                    entry.size = data.size.toLong()
-                    crc32.reset()
-                    crc32.update(data)
-                    entry.crc = crc32.value
-                } else {
-                    entry.method = ZipEntry.DEFLATED
-                }
-                zos.putNextEntry(entry)
+                zos.putNextEntry(ZipEntry(entryName))
                 zos.write(data)
                 zos.closeEntry()
             }
