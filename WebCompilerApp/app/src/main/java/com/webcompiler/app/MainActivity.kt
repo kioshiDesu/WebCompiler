@@ -19,6 +19,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.webcompiler.app.databinding.ActivityMainBinding
 import java.io.File
+import java.io.PrintWriter
+import java.io.StringWriter
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
@@ -43,18 +45,24 @@ class MainActivity : AppCompatActivity() {
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            selectedFileUri = it
-            selectedFileName = it.lastPathSegment ?: "file"
-            if (selectedFileName?.endsWith(".zip") == true) {
-                binding.codeInput.setText("— Zip file selected: ${selectedFileName} —")
-            } else {
-                binding.codeInput.setText(readUriContent(it))
+        if (uri == null) return@registerForActivityResult
+        try {
+            selectedFileUri = uri
+            selectedFileName = uri.lastPathSegment ?: "file"
+            val ext = selectedFileName?.substringAfterLast('.', "")?.uppercase() ?: ""
+            val label = when {
+                ext == "ZIP" -> "Zip file selected"
+                ext == "HTML" || ext == "HTM" -> "HTML file selected"
+                else -> "File selected"
             }
+            binding.codeInput.setText("— $label: $selectedFileName —")
             binding.codeInput.isEnabled = false
             binding.clearFileBtn.visibility = android.view.View.VISIBLE
             binding.selectFileBtn.text = "Change File"
             updateFileInfo()
+        } catch (t: Throwable) {
+            Log.e("WebCompiler", "Error selecting file", t)
+            showError("Error selecting file", t)
         }
     }
 
@@ -67,7 +75,12 @@ class MainActivity : AppCompatActivity() {
         setupIconPicker()
 
         binding.selectFileBtn.setOnClickListener {
-            filePicker.launch("*/*")
+            try {
+                filePicker.launch("*/*")
+            } catch (t: Throwable) {
+                Log.e("WebCompiler", "Cannot open file picker", t)
+                showError("Cannot open file picker", t)
+            }
         }
 
         binding.clearFileBtn.setOnClickListener {
@@ -90,6 +103,30 @@ class MainActivity : AppCompatActivity() {
         binding.saveBtn.setOnClickListener {
             saveToDownloads()
         }
+
+        Thread.setDefaultUncaughtExceptionHandler { _, t ->
+            Log.e("WebCompiler", "UNCAUGHT", t)
+            runOnUiThread {
+                showError("FATAL: uncaught exception", t)
+            }
+        }
+    }
+
+    private fun showError(context: String, t: Throwable) {
+        val sw = StringWriter()
+        val pw = PrintWriter(sw)
+        pw.println("=== $context ===")
+        pw.println("Exception: ${t.javaClass.name}")
+        pw.println("Message: ${t.message ?: "(no message)"}")
+        t.printStackTrace(pw)
+        pw.println("=== END ===")
+        pw.flush()
+        val text = sw.toString()
+        binding.logOutput.append("\n$text\n")
+        binding.logScroll.post {
+            binding.logScroll.fullScroll(android.view.View.FOCUS_DOWN)
+        }
+        toast(context)
     }
 
     private fun setupIconPicker() {
@@ -189,108 +226,115 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
     }
 
     private fun startBuild() {
-        val templateFile = getTemplateFile()
-        if (!templateFile.exists()) {
-            toast("template.apk not found")
-            return
-        }
-
-        val appName = binding.appNameInput.editText?.text?.toString()
-            ?.ifBlank { "WebApp" } ?: "WebApp"
-        val pkgName = binding.packageInput.editText?.text?.toString()
-            ?.ifBlank { "com.webapp" } ?: "com.webapp"
-
-        val permissions = getSelectedPermissions()
-
-        val htmlCode: String
-        val zipEntries: Map<String, ByteArray>?
-
-        if (selectedFileUri != null && selectedFileName?.endsWith(".zip") == true) {
-            htmlCode = ""
-            zipEntries = readZipUri(selectedFileUri!!)
-            if (zipEntries.isEmpty()) {
-                toast("Empty or invalid zip file")
+        try {
+            val templateFile = getTemplateFile()
+            if (!templateFile.exists()) {
+                toast("template.apk not found")
                 return
             }
-        } else if (selectedFileUri != null) {
-            htmlCode = readUriContent(selectedFileUri!!)
-            zipEntries = null
-        } else {
-            htmlCode = binding.codeInput.text.toString()
-            zipEntries = null
-        }
 
-        if (htmlCode.isBlank() && zipEntries == null) {
-            toast("Enter HTML code or select a file")
-            return
-        }
+            val appName = binding.appNameInput.editText?.text?.toString()
+                ?.ifBlank { "WebApp" } ?: "WebApp"
+            val pkgName = binding.packageInput.editText?.text?.toString()
+                ?.ifBlank { "com.webapp" } ?: "com.webapp"
 
-        val iconBytes = selectedIcon?.let { colorName ->
-            generateIconBitmap(getIconColor(colorName))
-        }
+            val permissions = getSelectedPermissions()
 
-        val config = CompilerEngine.Config(
-            appName = appName,
-            packageName = pkgName,
-            permissions = permissions,
-            htmlCode = htmlCode,
-            templateApk = templateFile,
-            iconPng = iconBytes,
-            zipEntries = zipEntries
-        )
+            val htmlCode: String
+            val zipEntries: Map<String, ByteArray>?
 
-        binding.buildBtn.isEnabled = false
-        binding.installBtn.isEnabled = false
-        binding.saveBtn.isEnabled = false
-        binding.logOutput.text = ""
-        isBuilding = true
-
-        Thread {
-            engine.build(config) { log ->
-                runOnUiThread {
-                    binding.logOutput.append("$log\n")
-                    binding.logScroll.post {
-                        binding.logScroll.fullScroll(android.view.View.FOCUS_DOWN)
-                    }
+            if (selectedFileUri != null && selectedFileName?.endsWith(".zip") == true) {
+                htmlCode = ""
+                zipEntries = readZipUri(selectedFileUri!!)
+                if (zipEntries.isEmpty()) {
+                    toast("Empty or invalid zip file")
+                    return
                 }
-            }.onSuccess {
-                runOnUiThread {
-                    binding.logOutput.append("\nBuild successful!\n")
-                    binding.installBtn.isEnabled = true
-                    binding.saveBtn.isEnabled = true
-                }
-            }.onFailure { err ->
-                runOnUiThread {
-                    val msg = err.message ?: err.javaClass.simpleName
-                    binding.logOutput.append("\nBuild failed: $msg\n")
-                    Log.e("WebCompiler", "Build failed", err)
-                }
-            }.also {
-                runOnUiThread {
-                    isBuilding = false
-                    binding.buildBtn.isEnabled = true
-                }
+            } else if (selectedFileUri != null) {
+                htmlCode = readUriContent(selectedFileUri!!)
+                zipEntries = null
+            } else {
+                htmlCode = binding.codeInput.text.toString()
+                zipEntries = null
             }
-        }.apply {
-            isDaemon = true
-            start()
+
+            if (htmlCode.isBlank() && zipEntries == null) {
+                toast("Enter HTML code or select a file")
+                return
+            }
+
+            val iconBytes = selectedIcon?.let { colorName ->
+                generateIconBitmap(getIconColor(colorName))
+            }
+
+            val config = CompilerEngine.Config(
+                appName = appName,
+                packageName = pkgName,
+                permissions = permissions,
+                htmlCode = htmlCode,
+                templateApk = templateFile,
+                iconPng = iconBytes,
+                zipEntries = zipEntries
+            )
+
+            binding.buildBtn.isEnabled = false
+            binding.installBtn.isEnabled = false
+            binding.saveBtn.isEnabled = false
+            binding.logOutput.text = ""
+            isBuilding = true
+
             Thread {
-                try {
-                    join(120_000)
-                    if (isAlive) {
-                        interrupt()
-                        runOnUiThread {
-                            binding.logOutput.append("\nBUILD TIMEOUT (120s)\n")
-                            isBuilding = false
-                            binding.buildBtn.isEnabled = true
+                engine.build(config) { log ->
+                    runOnUiThread {
+                        binding.logOutput.append("$log\n")
+                        binding.logScroll.post {
+                            binding.logScroll.fullScroll(android.view.View.FOCUS_DOWN)
                         }
                     }
-                } catch (_: InterruptedException) {}
-            }.start()
+                }.onSuccess {
+                    runOnUiThread {
+                        binding.logOutput.append("\nBuild successful!\n")
+                        binding.installBtn.isEnabled = true
+                        binding.saveBtn.isEnabled = true
+                    }
+                }.onFailure { err ->
+                    runOnUiThread {
+                        val msg = err.message ?: err.javaClass.simpleName
+                        binding.logOutput.append("\nBuild failed: $msg\n")
+                        Log.e("WebCompiler", "Build failed", err)
+                    }
+                }.also {
+                    runOnUiThread {
+                        isBuilding = false
+                        binding.buildBtn.isEnabled = true
+                    }
+                }
+            }.apply {
+                isDaemon = true
+                start()
+                Thread {
+                    try {
+                        join(120_000)
+                        if (isAlive) {
+                            interrupt()
+                            runOnUiThread {
+                                binding.logOutput.append("\nBUILD TIMEOUT (120s)\n")
+                                isBuilding = false
+                                binding.buildBtn.isEnabled = true
+                            }
+                        }
+                    } catch (_: InterruptedException) {}
+                }.start()
+            }
+        } catch (t: Throwable) {
+            Log.e("WebCompiler", "Error starting build", t)
+            showError("Error starting build", t)
+            isBuilding = false
+            binding.buildBtn.isEnabled = true
         }
     }
 
@@ -353,8 +397,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } catch (e: java.util.zip.ZipException) {
+            Log.e("WebCompiler", "Corrupt zip", e)
             toast("Corrupt zip file: ${e.message}")
         } catch (e: Exception) {
+            Log.e("WebCompiler", "Error reading zip", e)
             toast("Error reading zip: ${e.message}")
         }
         return entries
@@ -366,55 +412,65 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun installLatestApk() {
-        val apk = latestApk()
-        if (apk == null || !apk.exists()) {
-            toast("No APK to install")
-            return
-        }
         try {
-            val uri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", apk)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            val apk = latestApk()
+            if (apk == null || !apk.exists()) {
+                toast("No APK to install")
+                return
             }
-            startActivity(intent)
-            Handler(Looper.getMainLooper()).postDelayed({
-                if (apk.exists()) {
-                    apk.delete()
-                    toast("APK cleared after install")
+            try {
+                val uri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", apk)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
-            }, 3000)
-        } catch (e: ActivityNotFoundException) {
-            toast("No package installer found on device")
-            Log.e("WebCompiler", "Install failed: no installer", e)
-        } catch (e: SecurityException) {
-            toast("Permission denied: cannot access the APK")
-            Log.e("WebCompiler", "Install failed: security", e)
-        } catch (e: Exception) {
-            toast("Cannot open installer: ${e.message}")
-            Log.e("WebCompiler", "Install failed", e)
+                startActivity(intent)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (apk.exists()) {
+                        apk.delete()
+                        toast("APK cleared after install")
+                    }
+                }, 3000)
+            } catch (e: ActivityNotFoundException) {
+                toast("No package installer found on device")
+                Log.e("WebCompiler", "Install failed: no installer", e)
+            } catch (e: SecurityException) {
+                toast("Permission denied: cannot access the APK")
+                Log.e("WebCompiler", "Install failed: security", e)
+            } catch (e: Exception) {
+                toast("Cannot open installer: ${e.message}")
+                Log.e("WebCompiler", "Install failed", e)
+            }
+        } catch (t: Throwable) {
+            Log.e("WebCompiler", "Install error", t)
+            showError("Install error", t)
         }
     }
 
     private fun saveToDownloads() {
-        val apk = latestApk()
-        if (apk == null || !apk.exists()) {
-            toast("No APK to save")
-            return
-        }
-        val downloadsDir = File("/storage/emulated/0/Download")
-        if (!downloadsDir.exists()) {
-            toast("Downloads directory not accessible")
-            return
-        }
-        val dest = File(downloadsDir, apk.name)
         try {
-            apk.copyTo(dest, overwrite = true)
-            toast("Saved to Downloads/${dest.name}")
-        } catch (e: Exception) {
-            toast("Save failed: ${e.message}")
+            val apk = latestApk()
+            if (apk == null || !apk.exists()) {
+                toast("No APK to save")
+                return
+            }
+            val downloadsDir = File("/storage/emulated/0/Download")
+            if (!downloadsDir.exists()) {
+                toast("Downloads directory not accessible")
+                return
+            }
+            val dest = File(downloadsDir, apk.name)
+            try {
+                apk.copyTo(dest, overwrite = true)
+                toast("Saved to Downloads/${dest.name}")
+            } catch (e: Exception) {
+                toast("Save failed: ${e.message}")
+            }
+        } catch (t: Throwable) {
+            Log.e("WebCompiler", "Save error", t)
+            showError("Save error", t)
         }
     }
 
