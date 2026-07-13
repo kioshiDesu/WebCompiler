@@ -73,7 +73,6 @@ class ApkSigner(
         certificate: X509Certificate
     ): ByteArray {
         val certHolder = org.bouncycastle.cert.jcajce.JcaX509CertificateHolder(certificate)
-        val certStruct = certHolder.toASN1Structure()
 
         val signerBuilder = JcaSignerInfoGeneratorBuilder(
             JcaDigestCalculatorProviderBuilder().build()
@@ -84,7 +83,7 @@ class ApkSigner(
 
         val gen = CMSSignedDataGenerator()
         gen.addSignerInfoGenerator(signerBuilder)
-        gen.addCertificate(certStruct)
+        gen.addCertificate(certHolder)
 
         val content = object : CMSTypedData {
             override fun getContentType() = org.bouncycastle.asn1.ASN1ObjectIdentifier("1.2.840.113549.1.7.1")
