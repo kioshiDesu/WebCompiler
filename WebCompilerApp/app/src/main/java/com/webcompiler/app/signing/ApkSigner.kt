@@ -57,7 +57,7 @@ class ApkSigner(
             }
         }
 
-        return lines.joinToString("\r\n").toByteArray(Charsets.US_ASCII)
+        return (lines.joinToString("\r\n") + "\r\n").toByteArray(Charsets.US_ASCII)
     }
 
     private fun createSignatureFile(manifest: ByteArray): ByteArray {
@@ -71,7 +71,7 @@ class ApkSigner(
         lines.add("SHA-256-Digest-Manifest: $b64")
         lines.add("")
 
-        return lines.joinToString("\r\n").toByteArray(Charsets.US_ASCII)
+        return (lines.joinToString("\r\n") + "\r\n").toByteArray(Charsets.US_ASCII)
     }
 
     private fun createSignatureBlock(
@@ -106,11 +106,12 @@ class ApkSigner(
             set(DERUTCTime(Date()))
         )
         val signedAttrs = set(attrContentType, attrMessageDigest, attrSigningTime)
+        val taggedSignedAttrs = DERTaggedObject(false, 0, signedAttrs)
 
-        val signedAttrsDer = signedAttrs.getEncoded("DER")
+        val toSign = taggedSignedAttrs.getEncoded("DER")
         val sig = Signature.getInstance("SHA256WithRSA").apply {
             initSign(privateKey)
-            update(signedAttrsDer)
+            update(toSign)
         }.sign()
 
         val dnParsed = ASN1Primitive.fromByteArray(certificate.issuerX500Principal.encoded) as ASN1Sequence
@@ -126,7 +127,7 @@ class ApkSigner(
                 ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1"),
                 DERNull.INSTANCE
             ),
-            DERTaggedObject(false, 0, signedAttrs),
+            taggedSignedAttrs,
             seq(
                 ASN1ObjectIdentifier("1.2.840.113549.1.1.11"),
                 DERNull.INSTANCE
