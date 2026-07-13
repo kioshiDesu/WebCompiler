@@ -91,6 +91,27 @@
                 android:layout_height="wrap_content"
                 android:text="Storage" />
 
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipMicrophone"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Microphone" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipContacts"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Contacts" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipPhone"
+                style="@style/Widget.MaterialComponents.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Phone" />
+
         </com.google.android.material.chip.ChipGroup>
 
         <TextView

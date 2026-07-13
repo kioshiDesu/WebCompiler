@@ -101,8 +101,8 @@ class ApkSigner {
                 }
                 writeRaw(dn.encoded)
                 writeSequence {
-                    writeUtcTime(notBefore)
-                    writeUtcTime(notAfter)
+                    writeGeneralizedTime(notBefore)
+                    writeGeneralizedTime(notAfter)
                 }
                 writeRaw(dn.encoded)
                 writeRaw(pubKeyInfo)
@@ -188,6 +188,12 @@ class ApkSigner {
             val fmt = SimpleDateFormat("yyMMddHHmmss'Z'", Locale.US)
             fmt.timeZone = TimeZone.getTimeZone("UTC")
             write(0x17, fmt.format(date).toByteArray(Charsets.US_ASCII))
+        }
+
+        fun writeGeneralizedTime(date: Date) {
+            val fmt = SimpleDateFormat("yyyyMMddHHmmss'Z'", Locale.US)
+            fmt.timeZone = TimeZone.getTimeZone("UTC")
+            write(0x18, fmt.format(date).toByteArray(Charsets.US_ASCII))
         }
 
         fun writeRaw(bytes: ByteArray) {
