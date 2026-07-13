@@ -46,7 +46,11 @@ class MainActivity : AppCompatActivity() {
         uri?.let {
             selectedFileUri = it
             selectedFileName = it.lastPathSegment ?: "file"
-            binding.codeInput.setText(readUriContent(it))
+            if (selectedFileName?.endsWith(".zip") == true) {
+                binding.codeInput.setText("— Zip file selected: ${selectedFileName} —")
+            } else {
+                binding.codeInput.setText(readUriContent(it))
+            }
             binding.codeInput.isEnabled = false
             binding.clearFileBtn.visibility = android.view.View.VISIBLE
             binding.selectFileBtn.text = "Change File"
@@ -306,7 +310,13 @@ class MainActivity : AppCompatActivity() {
         return try {
             val inputStream = contentResolver.openInputStream(uri)
                 ?: return "<!-- Could not read file -->"
-            inputStream.bufferedReader().use { it.readText() }
+            val bytes = inputStream.readBytes()
+            if (bytes.size > 5 * 1024 * 1024) {
+                return "<!-- File too large (${bytes.size / 1024 / 1024} MB, max 5 MB) -->"
+            }
+            bytes.toString(Charsets.UTF_8)
+        } catch (e: OutOfMemoryError) {
+            "<!-- File too large to display -->"
         } catch (e: Exception) {
             "<!-- Error reading file: ${e.message} -->"
         }
@@ -326,12 +336,24 @@ class MainActivity : AppCompatActivity() {
                             entry = zis.nextEntry
                             continue
                         }
-                        val data = zis.readBytes()
-                        entries[name] = data
+                        if (entry.size > 10 * 1024 * 1024) {
+                            Log.w("WebCompiler", "Skipping oversized zip entry: $name (${entry.size / 1024 / 1024} MB)")
+                            entry = zis.nextEntry
+                            continue
+                        }
+                        val data = try {
+                            zis.readBytes()
+                        } catch (e: Exception) {
+                            Log.w("WebCompiler", "Failed to read zip entry $name: ${e.message}")
+                            null
+                        }
+                        if (data != null) entries[name] = data
                     }
                     entry = zis.nextEntry
                 }
             }
+        } catch (e: java.util.zip.ZipException) {
+            toast("Corrupt zip file: ${e.message}")
         } catch (e: Exception) {
             toast("Error reading zip: ${e.message}")
         }
