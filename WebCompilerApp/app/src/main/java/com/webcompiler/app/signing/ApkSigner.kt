@@ -241,7 +241,7 @@ class ApkSigner {
                     writeOid("1.2.840.113549.1.7.1")
                 }
                 writeContextTaggedSet(0) { writeRaw(certificate.encoded) }
-                writeContextTaggedSet(1) { writeRaw(signerInfo) }
+                writeSet { writeRaw(signerInfo) }
             }
         }.toByteArray()
 

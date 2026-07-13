@@ -224,7 +224,7 @@
             android:id="@+id/saveApkBtn"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="Save APK"
+                android:text="Install APK"
             android:enabled="false"
             android:layout_marginTop="16dp"
             app:layout_constraintEnd_toEndOf="parent"

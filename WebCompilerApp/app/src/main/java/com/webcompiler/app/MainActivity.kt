@@ -1,5 +1,6 @@
 package com.webcompiler.app
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -11,6 +12,7 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import com.webcompiler.app.databinding.ActivityMainBinding
 import java.io.File
 import java.util.zip.ZipEntry
@@ -62,7 +64,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.saveApkBtn.setOnClickListener {
-            saveApk()
+            installLatestApk()
         }
     }
 
@@ -211,7 +213,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }.onSuccess {
                 runOnUiThread {
+                    val dest = autoSaveToDownloads()
                     binding.logOutput.append("\nBuild successful!\n")
+                    if (dest != null) {
+                        binding.logOutput.append("Saved to Downloads/${dest.name}\n")
+                    }
                     binding.saveApkBtn.isEnabled = true
                 }
             }.onFailure { err ->
@@ -274,21 +280,36 @@ class MainActivity : AppCompatActivity() {
             ?: File(getExternalFilesDir(null) ?: filesDir, "template.apk")
     }
 
-    private fun saveApk() {
+    private fun autoSaveToDownloads(): File? {
         val outputDir = File(getExternalFilesDir(null), "WebCompiler")
         val apks = outputDir.listFiles { f -> f.extension == "apk" }
-        if (apks.isNullOrEmpty()) {
-            toast("No APK found to save")
+        if (apks.isNullOrEmpty()) return null
+        val apk = apks.maxByOrNull { it.lastModified() } ?: return null
+        val downloadsDir = File("/storage/emulated/0/Download")
+        if (!downloadsDir.exists()) return null
+        val dest = File(downloadsDir, apk.name)
+        return try {
+            apk.copyTo(dest, overwrite = true)
+            dest
+        } catch (_: Exception) { null }
+    }
+
+    private fun installLatestApk() {
+        val dest = autoSaveToDownloads()
+        if (dest == null || !dest.exists()) {
+            toast("No APK to install")
             return
         }
-        val apk = apks.maxByOrNull { it.lastModified() } ?: return
-        val downloadsDir = File("/storage/emulated/0/Download")
-        if (downloadsDir.exists()) {
-            val dest = File(downloadsDir, apk.name)
-            apk.copyTo(dest, overwrite = true)
-            toast("Saved to Downloads/${apk.name}")
-        } else {
-            toast("APK at: ${apk.absolutePath}")
+        try {
+            val uri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", dest)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            toast("Cannot open installer: ${e.message}")
         }
     }
 
