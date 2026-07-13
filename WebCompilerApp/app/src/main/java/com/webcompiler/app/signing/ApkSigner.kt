@@ -12,6 +12,7 @@ import java.security.cert.X509Certificate
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
+import org.bouncycastle.cms.CMSSignedData
 import org.bouncycastle.cms.CMSSignedDataGenerator
 import org.bouncycastle.cms.CMSTypedData
 import org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder
@@ -30,9 +31,29 @@ class ApkSigner(
         val v1Apk = File(outputApk.absolutePath + ".v1temp")
         try {
             writeSignedApk(inputApk, v1Apk, manifest, sigFile, sigBlock)
+            verifyV1Temp(v1Apk)
             addV2SigningBlock(v1Apk, outputApk)
         } finally {
             v1Apk.delete()
+        }
+    }
+
+    private fun verifyV1Temp(v1Apk: File) {
+        ZipFile(v1Apk).use { zip ->
+            val certEntry = zip.getEntry("META-INF/CERT.RSA")
+            if (certEntry == null) {
+                throw IllegalStateException("CERT.RSA missing from v1temp")
+            }
+            val data = zip.getInputStream(certEntry).readBytes()
+            if (data.isEmpty()) {
+                throw IllegalStateException("CERT.RSA is empty in v1temp")
+            }
+            // Verify PKCS7 parses correctly
+            val cms = org.bouncycastle.cms.CMSSignedData(data)
+            val signers = cms.getSignerInfos().getSigners()
+            if (signers.isEmpty()) {
+                throw IllegalStateException("No signers in CERT.RSA PKCS7")
+            }
         }
     }
 
