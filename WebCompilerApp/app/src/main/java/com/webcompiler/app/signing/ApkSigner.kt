@@ -89,7 +89,7 @@ class ApkSigner(
             override fun getContent() = sigFile
             override fun write(out: java.io.OutputStream) = out.write(sigFile)
         }
-        val signedData = gen.generate(content, true)
+        val signedData = gen.generate(content, false)
         return signedData.encoded
     }
 
