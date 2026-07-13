@@ -50,37 +50,40 @@ class CompilerEngine(private val context: Context) {
 
     fun build(config: Config, onLog: (String) -> Unit): Result<File> {
         return try {
-            outputDir.mkdirs()
-            workDir.mkdirs()
             workDir.deleteRecursively()
             workDir.mkdirs()
+            outputDir.mkdirs()
+            // Clean old APKs from previous builds
+            outputDir.listFiles { f -> f.extension == "apk" }?.forEach { it.delete() }
 
             val extractDir = File(workDir, "extracted")
-            val finalApk = File(outputDir, "${config.appName.replace(" ", "")}.apk")
+            val templateApk = config.templateApk
 
             onLog("[1/5] Extracting template APK...")
-            extractApk(config.templateApk, extractDir, onLog)
+            extractApk(templateApk, extractDir, onLog)
 
             onLog("[2/5] Preparing AndroidManifest.xml...")
-            // All permissions are pre-declared in the template; no patching needed
 
             onLog("[3/5] Injecting assets...")
             injectAssets(extractDir, config, onLog)
 
             onLog("[4/5] Repackaging APK...")
-            repackageApk(extractDir, File(workDir, "unsigned.apk"), onLog)
+            val unsignedApk = File(workDir, "unsigned.apk")
+            repackageApk(extractDir, unsignedApk, onLog)
 
             onLog("[5/5] Signing APK...")
+            val finalApk = File(outputDir, "${config.appName.replace(" ", "")}.apk")
             val signer = ApkSigner()
-            signer.sign(File(workDir, "unsigned.apk"), finalApk)
-            File(workDir, "unsigned.apk").delete()
+            signer.sign(unsignedApk, finalApk)
+            unsignedApk.delete()
 
             extractDir.deleteRecursively()
             onLog("Done! APK saved to: ${finalApk.absolutePath}")
             Result.success(finalApk)
         } catch (e: Exception) {
-            onLog("ERROR: ${e.message}")
+            onLog("ERROR: ${e.message ?: e.javaClass.simpleName}")
             e.printStackTrace()
+            outputDir.listFiles { f -> f.extension == "apk" }?.forEach { it.delete() }
             Result.failure(e)
         }
     }

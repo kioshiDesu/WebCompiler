@@ -270,14 +270,14 @@ class ApkSigner {
             "META-INF/CERT.RSA" to sigBlock
         )
 
+        val sigBlockName = "META-INF/CERT.RSA"
+
         ZipFile(input).use { zip ->
             ZipOutputStream(output.outputStream()).use { zos ->
                 val entries = zip.entries().asSequence()
                     .filter { !it.isDirectory }
                     .sortedBy { it.name }
                     .toList()
-
-                val written = mutableSetOf<String>()
 
                 for (entry in entries) {
                     val name = entry.name
@@ -289,18 +289,13 @@ class ApkSigner {
                     }
                     val ze = ZipEntry(name)
                     val data = zip.getInputStream(entry).readBytes()
-                    ze.size = data.size.toLong()
-                    CRC32().also { it.update(data) }.let { ze.crc = it.value }
                     zos.putNextEntry(ze)
                     zos.write(data)
                     zos.closeEntry()
-                    written.add(name)
                 }
 
                 for ((name, data) in newMetaInf) {
                     val ze = ZipEntry(name)
-                    ze.size = data.size.toLong()
-                    CRC32().also { it.update(data) }.let { ze.crc = it.value }
                     zos.putNextEntry(ze)
                     zos.write(data)
                     zos.closeEntry()
