@@ -3,129 +3,29 @@ package com.webcompiler.app.signing
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.math.BigInteger
-import java.security.KeyPair
-import java.security.KeyPairGenerator
-import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.Signature
-import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
-import java.security.interfaces.RSAPublicKey
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
-import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import javax.security.auth.x500.X500Principal
 
-class ApkSigner {
+class ApkSigner(
+    private val privateKey: PrivateKey,
+    private val certificate: X509Certificate
+) {
 
-    fun sign(inputApk: File, outputApk: File, keystoreFile: File? = null) {
-        val ks = keystoreFile ?: File(inputApk.parentFile, "debug.keystore")
-
-        val keyStore: KeyStore
-        val privateKey: PrivateKey
-        val certificate: X509Certificate
-
-        if (ks.exists()) {
-            keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
-                load(ks.inputStream(), "android".toCharArray())
-            }
-            val alias = keyStore.aliases().asSequence().firstOrNull()
-                ?: throw IllegalStateException("Keystore has no entries")
-            privateKey = keyStore.getKey(alias, "android".toCharArray()) as PrivateKey
-            certificate = keyStore.getCertificate(alias) as X509Certificate
-        } else {
-            val keyPair = generateKeyPair()
-            privateKey = keyPair.private
-            certificate = generateCertificate(keyPair)
-
-            keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
-                load(null, null)
-                setKeyEntry("debug", privateKey, "android".toCharArray(), arrayOf(certificate))
-            }
-            ks.parentFile?.mkdirs()
-            ks.outputStream().use { keyStore.store(it, "android".toCharArray()) }
-        }
-
+    fun sign(inputApk: File, outputApk: File) {
         val manifest = createManifest(inputApk)
         val sigFile = createSignatureFile(manifest)
         val sigBlock = createSignatureBlock(sigFile, privateKey, certificate)
-
         writeSignedApk(inputApk, outputApk, manifest, sigFile, sigBlock)
-    }
-
-    private fun generateKeyPair(): KeyPair {
-        val gen = KeyPairGenerator.getInstance("RSA")
-        gen.initialize(2048)
-        return gen.generateKeyPair()
-    }
-
-    private fun generateCertificate(keyPair: KeyPair): X509Certificate {
-        val dn = X500Principal("CN=Debug, OU=Dev, O=WebCompiler, L=City, ST=State, C=US")
-        val serial = BigInteger.ONE
-        val notBefore = Date(System.currentTimeMillis() - 365L * 24 * 60 * 60 * 1000)
-        val notAfter = Date(System.currentTimeMillis() + 10000L * 24 * 60 * 60 * 1000)
-
-        val rsaPub = keyPair.public as RSAPublicKey
-
-        val pubKeyInfo = DerWriter().apply {
-            writeSequence {
-                writeSequence {
-                    writeOid("1.2.840.113549.1.1.1")
-                    writeNull()
-                }
-                writeBitString(
-                    DerWriter().apply {
-                        writeSequence {
-                            writeInteger(rsaPub.modulus)
-                            writeInteger(rsaPub.publicExponent)
-                        }
-                    }.toByteArray()
-                )
-            }
-        }.toByteArray()
-
-        val tbsCert = DerWriter().apply {
-            writeSequence {
-                writeContextSpecificExplicit(0) { writeInteger(BigInteger.valueOf(2)) }
-                writeInteger(serial)
-                writeSequence {
-                    writeOid("1.2.840.113549.1.1.11")
-                    writeNull()
-                }
-                writeRaw(dn.encoded)
-                writeSequence {
-                    writeGeneralizedTime(notBefore)
-                    writeGeneralizedTime(notAfter)
-                }
-                writeRaw(dn.encoded)
-                writeRaw(pubKeyInfo)
-            }
-        }.toByteArray()
-
-        val sig = Signature.getInstance("SHA256WithRSA").apply {
-            initSign(keyPair.private)
-            update(tbsCert)
-        }.sign()
-
-        val certDer = DerWriter().apply {
-            writeSequence {
-                writeRaw(tbsCert)
-                writeSequence {
-                    writeOid("1.2.840.113549.1.1.11")
-                    writeNull()
-                }
-                writeBitString(sig)
-            }
-        }.toByteArray()
-
-        return CertificateFactory.getInstance("X.509")
-            .generateCertificate(certDer.inputStream()) as X509Certificate
     }
 
     private fun createManifest(apkFile: File): ByteArray {
@@ -174,10 +74,8 @@ class ApkSigner {
         privateKey: PrivateKey,
         certificate: X509Certificate
     ): ByteArray {
-        // SHA-256 digest of the signature file
         val digest = MessageDigest.getInstance("SHA-256").digest(sigFile)
 
-        // Build signed attributes inner content (ATTR sequences without SET wrapper)
         val attrsInner = DerWriter().apply {
             writeSequence {
                 writeOid("1.2.840.113549.1.9.3")
@@ -193,12 +91,10 @@ class ApkSigner {
             }
         }.toByteArray()
 
-        // [0] IMPLICIT SET OF Attribute (constructed tag 0xA0)
         val signedAttrs = DerWriter().apply {
             writeContextTaggedSet(0) { writeRaw(attrsInner) }
         }.toByteArray()
 
-        // Sign over the DER of signedAttrs
         val sig = Signature.getInstance("SHA256WithRSA").apply {
             initSign(privateKey)
             update(signedAttrs)
@@ -206,7 +102,6 @@ class ApkSigner {
 
         val dn = certificate.issuerX500Principal
 
-        // SignerInfo
         val signerInfo = DerWriter().apply {
             writeSequence {
                 writeInteger(BigInteger.ONE)
@@ -227,7 +122,6 @@ class ApkSigner {
             }
         }.toByteArray()
 
-        // Build SignedData
         val signedData = DerWriter().apply {
             writeSequence {
                 writeInteger(BigInteger.ONE)
@@ -245,7 +139,6 @@ class ApkSigner {
             }
         }.toByteArray()
 
-        // ContentInfo wrapping SignedData
         return DerWriter().apply {
             writeSequence {
                 writeOid("1.2.840.113549.1.7.2")
@@ -269,8 +162,6 @@ class ApkSigner {
             "META-INF/CERT.SF" to sf,
             "META-INF/CERT.RSA" to sigBlock
         )
-
-        val sigBlockName = "META-INF/CERT.RSA"
 
         ZipFile(input).use { zip ->
             ZipOutputStream(output.outputStream()).use { zos ->

@@ -5,11 +5,26 @@ import com.webcompiler.app.signing.ApkSigner
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.security.KeyFactory
+import java.security.cert.CertificateFactory
+import java.security.spec.PKCS8EncodedKeySpec
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 class CompilerEngine(private val context: Context) {
+
+    private val signer: ApkSigner by lazy {
+        val cf = CertificateFactory.getInstance("X.509")
+        val cert = context.resources.openRawResource(R.raw.cert).use { input ->
+            cf.generateCertificate(input) as java.security.cert.X509Certificate
+        }
+        val keyBytes = context.resources.openRawResource(R.raw.key).use { it.readBytes() }
+        val keySpec = PKCS8EncodedKeySpec(keyBytes)
+        val kf = KeyFactory.getInstance("RSA")
+        val privateKey = kf.generatePrivate(keySpec)
+        ApkSigner(privateKey, cert)
+    }
 
     data class Config(
         val appName: String,
@@ -73,7 +88,6 @@ class CompilerEngine(private val context: Context) {
 
             onLog("[5/5] Signing APK...")
             val finalApk = File(outputDir, "${config.appName.replace(" ", "")}.apk")
-            val signer = ApkSigner()
             signer.sign(unsignedApk, finalApk)
             unsignedApk.delete()
 
