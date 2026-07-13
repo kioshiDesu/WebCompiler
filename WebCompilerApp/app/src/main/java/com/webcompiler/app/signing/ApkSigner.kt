@@ -9,6 +9,7 @@ import java.util.Date
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
+import org.bouncycastle.asn1.ASN1EncodableVector
 import org.bouncycastle.asn1.ASN1Integer
 import org.bouncycastle.asn1.ASN1ObjectIdentifier
 import org.bouncycastle.asn1.ASN1Primitive
@@ -80,19 +81,31 @@ class ApkSigner(
     ): ByteArray {
         val sigFileDigest = MessageDigest.getInstance("SHA-256").digest(sigFile)
 
-        val attrContentType = DLSequence(
+        fun seq(vararg items: org.bouncycastle.asn1.ASN1Encodable): DLSequence {
+            val v = ASN1EncodableVector()
+            for (item in items) v.add(item)
+            return DLSequence(v)
+        }
+
+        fun set(vararg items: org.bouncycastle.asn1.ASN1Encodable): DLSet {
+            val v = ASN1EncodableVector()
+            for (item in items) v.add(item)
+            return DLSet(v)
+        }
+
+        val attrContentType = seq(
             ASN1ObjectIdentifier("1.2.840.113549.1.9.3"),
-            DLSet(ASN1ObjectIdentifier("1.2.840.113549.1.7.1"))
+            set(ASN1ObjectIdentifier("1.2.840.113549.1.7.1"))
         )
-        val attrMessageDigest = DLSequence(
+        val attrMessageDigest = seq(
             ASN1ObjectIdentifier("1.2.840.113549.1.9.4"),
-            DLSet(DEROctetString(sigFileDigest))
+            set(DEROctetString(sigFileDigest))
         )
-        val attrSigningTime = DLSequence(
+        val attrSigningTime = seq(
             ASN1ObjectIdentifier("1.2.840.113549.1.9.5"),
-            DLSet(DERUTCTime(Date()))
+            set(DERUTCTime(Date()))
         )
-        val signedAttrs = DLSet(attrContentType, attrMessageDigest, attrSigningTime)
+        val signedAttrs = set(attrContentType, attrMessageDigest, attrSigningTime)
 
         val signedAttrsDer = signedAttrs.getEncoded("DER")
         val sig = Signature.getInstance("SHA256WithRSA").apply {
@@ -100,47 +113,48 @@ class ApkSigner(
             update(signedAttrsDer)
         }.sign()
 
-        val issuerAndSn = DLSequence(
-            DLSequence(certificate.issuerX500Principal.encoded),
+        val dnParsed = ASN1Primitive.fromByteArray(certificate.issuerX500Principal.encoded) as ASN1Sequence
+        val issuerAndSn = seq(
+            dnParsed,
             ASN1Integer(certificate.serialNumber)
         )
 
-        val signerInfo = DLSequence(
+        val signerInfo = seq(
             ASN1Integer(1),
             issuerAndSn,
-            DLSequence(
+            seq(
                 ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1"),
                 DERNull.INSTANCE
             ),
             DERTaggedObject(false, 0, signedAttrs),
-            DLSequence(
+            seq(
                 ASN1ObjectIdentifier("1.2.840.113549.1.1.11"),
                 DERNull.INSTANCE
             ),
             DEROctetString(sig)
         )
 
-        val certSeq = ASN1Primitive.fromByteArray(certificate.encoded) as ASN1Sequence
-        val certSet = DLSet(certSeq)
+        val certParsed = ASN1Primitive.fromByteArray(certificate.encoded) as ASN1Sequence
+        val certSet = set(certParsed)
 
-        val innerContentInfo = DLSequence(
+        val innerContentInfo = seq(
             ASN1ObjectIdentifier("1.2.840.113549.1.7.1")
         )
 
-        val signedData = DLSequence(
+        val signedData = seq(
             ASN1Integer(1),
-            DLSet(
-                DLSequence(
+            set(
+                seq(
                     ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1"),
                     DERNull.INSTANCE
                 )
             ),
             innerContentInfo,
             DERTaggedObject(false, 0, certSet),
-            DLSet(signerInfo)
+            set(signerInfo)
         )
 
-        val contentInfo = DLSequence(
+        val contentInfo = seq(
             ASN1ObjectIdentifier("1.2.840.113549.1.7.2"),
             DERTaggedObject(true, 0, signedData)
         )

@@ -94,7 +94,7 @@ class CompilerEngine(private val context: Context) {
             val templateSize = templateApk.length()
             stepLog("[1/5] Extracting template APK", "${templateSize / 1024} KB")
 
-            val extracted = extractApk(templateApk, extractDir, onLog, stepLog)
+            val extracted = extractApk(templateApk, extractDir, onLog)
             if (extracted.isEmpty()) {
                 return Result.failure(IllegalStateException("Template APK extraction produced no files"))
             }
@@ -103,11 +103,11 @@ class CompilerEngine(private val context: Context) {
             stepLog("[2/5] Preparing AndroidManifest.xml")
 
             stepLog("[3/5] Injecting assets")
-            injectAssets(extractDir, config, onLog, stepLog)
+            injectAssets(extractDir, config, onLog)
 
             stepLog("[4/5] Repackaging APK")
             val unsignedApk = File(workDir, "unsigned.apk")
-            val repackageCount = repackageApk(extractDir, unsignedApk, onLog, stepLog)
+            val repackageCount = repackageApk(extractDir, unsignedApk, onLog)
             if (!unsignedApk.exists() || unsignedApk.length() == 0L) {
                 return Result.failure(IllegalStateException("Repackaged APK is empty or missing"))
             }
@@ -150,7 +150,7 @@ class CompilerEngine(private val context: Context) {
         }
     }
 
-    private fun extractApk(apkFile: File, destDir: File, onLog: (String) -> Unit, stepLog: (String, String) -> Unit): List<String> {
+    private fun extractApk(apkFile: File, destDir: File, onLog: (String) -> Unit): List<String> {
         destDir.mkdirs()
         val names = mutableListOf<String>()
         ZipFile(apkFile).use { zip ->
@@ -171,7 +171,7 @@ class CompilerEngine(private val context: Context) {
         return names
     }
 
-    private fun injectAssets(extractDir: File, config: Config, onLog: (String) -> Unit, stepLog: (String, String) -> Unit) {
+    private fun injectAssets(extractDir: File, config: Config, onLog: (String) -> Unit) {
         val assetsDir = File(extractDir, "assets")
         assetsDir.mkdirs()
 
@@ -188,7 +188,7 @@ class CompilerEngine(private val context: Context) {
                 targetFile.writeBytes(data)
                 injected++
             }
-            stepLog("[3/5] Injected $injected files from zip into assets/")
+            onLog("  Injected $injected files from zip into assets/")
         } else {
             val html = config.htmlCode
             if (html.length > 5 * 1024 * 1024) {
@@ -196,7 +196,7 @@ class CompilerEngine(private val context: Context) {
                 onLog("  WARNING: HTML code is ${html.length / 1024} KB")
             }
             File(assetsDir, "index.html").writeText(html)
-            stepLog("[3/5] Injected index.html (${html.length / 1024} KB)")
+            onLog("  Injected index.html (${html.length / 1024} KB)")
         }
 
         if (config.iconPng != null) {
@@ -209,7 +209,7 @@ class CompilerEngine(private val context: Context) {
                     f.parentFile?.mkdirs()
                     f.writeBytes(scaled[i])
                 }
-                stepLog("[3/5] Applied custom icon across 5 densities")
+                onLog("  Applied custom icon across 5 densities")
             }
         }
     }
@@ -232,7 +232,7 @@ class CompilerEngine(private val context: Context) {
         }
     }
 
-    private fun repackageApk(inputDir: File, outputApk: File, onLog: (String) -> Unit, stepLog: (String, String) -> Unit): Int {
+    private fun repackageApk(inputDir: File, outputApk: File, onLog: (String) -> Unit): Int {
         val files = inputDir.walkTopDown().filter { it.isFile }.toList()
         if (files.isEmpty()) {
             throw IllegalStateException("No files to repackage")
