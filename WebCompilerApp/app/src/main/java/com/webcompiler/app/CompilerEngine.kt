@@ -250,7 +250,18 @@ class CompilerEngine(private val context: Context) {
         val templateUtf16 = templatePkg.toByteArray(java.nio.charset.StandardCharsets.UTF_16LE)
         val newUtf16 = newPackage.toByteArray(java.nio.charset.StandardCharsets.UTF_16LE)
 
-        val idx = data.indexOf(templateUtf16)
+        fun ByteArray.indexOfSubarray(sub: ByteArray): Int {
+            if (sub.isEmpty()) return 0
+            for (i in 0..this.size - sub.size) {
+                var match = true
+                for (j in sub.indices) {
+                    if (this[i + j] != sub[j]) { match = false; break }
+                }
+                if (match) return i
+            }
+            return -1
+        }
+        val idx = data.indexOfSubarray(templateUtf16)
         if (idx < 0) {
             onLog("  WARNING: Could not find package '$templatePkg' in binary manifest")
             return
