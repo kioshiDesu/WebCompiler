@@ -1,12 +1,12 @@
 package com.webcompiler.app.signing
 
-import com.android.apksig.ApkSigner
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.math.BigInteger
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
+import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.Signature
 import java.security.cert.CertificateFactory
@@ -16,6 +16,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.zip.CRC32
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 import javax.security.auth.x500.X500Principal
 
 class ApkSigner {
@@ -48,16 +52,11 @@ class ApkSigner {
             ks.outputStream().use { keyStore.store(it, "android".toCharArray()) }
         }
 
-        val signerConfig = ApkSigner.SignerConfig.Builder("CERT", privateKey, listOf(certificate)).build()
+        val manifest = createManifest(inputApk)
+        val sigFile = createSignatureFile(manifest)
+        val sigBlock = createSignatureBlock(sigFile, privateKey, certificate)
 
-        ApkSigner.Builder(listOf(signerConfig))
-            .setInputApk(inputApk)
-            .setOutputApk(outputApk)
-            .setV1SigningEnabled(true)
-            .setV2SigningEnabled(false)
-            .setV3SigningEnabled(false)
-            .build()
-            .sign()
+        writeSignedApk(inputApk, outputApk, manifest, sigFile, sigBlock)
     }
 
     private fun generateKeyPair(): KeyPair {
@@ -129,6 +128,187 @@ class ApkSigner {
             .generateCertificate(certDer.inputStream()) as X509Certificate
     }
 
+    private fun createManifest(apkFile: File): ByteArray {
+        val lines = mutableListOf<String>()
+        lines.add("Manifest-Version: 1.0")
+        lines.add("Created-By: WebCompiler")
+        lines.add("")
+
+        val md = MessageDigest.getInstance("SHA-256")
+
+        ZipFile(apkFile).use { zip ->
+            val entries = zip.entries().asSequence()
+                .filter { !it.isDirectory && !it.name.startsWith("META-INF/") }
+                .sortedBy { it.name }
+                .toList()
+
+            for (entry in entries) {
+                val data = zip.getInputStream(entry).readBytes()
+                val hash = md.digest(data)
+                val b64 = android.util.Base64.encodeToString(hash, android.util.Base64.NO_WRAP)
+                lines.add("Name: ${entry.name}")
+                lines.add("SHA-256-Digest: $b64")
+                lines.add("")
+            }
+        }
+
+        return lines.joinToString("\r\n").toByteArray(Charsets.US_ASCII)
+    }
+
+    private fun createSignatureFile(manifest: ByteArray): ByteArray {
+        val md = MessageDigest.getInstance("SHA-256")
+        val hash = md.digest(manifest)
+        val b64 = android.util.Base64.encodeToString(hash, android.util.Base64.NO_WRAP)
+
+        val lines = mutableListOf<String>()
+        lines.add("Signature-Version: 1.0")
+        lines.add("Created-By: WebCompiler")
+        lines.add("SHA-256-Digest-Manifest: $b64")
+        lines.add("")
+
+        return lines.joinToString("\r\n").toByteArray(Charsets.US_ASCII)
+    }
+
+    private fun createSignatureBlock(
+        sigFile: ByteArray,
+        privateKey: PrivateKey,
+        certificate: X509Certificate
+    ): ByteArray {
+        // SHA-256 digest of the signature file
+        val digest = MessageDigest.getInstance("SHA-256").digest(sigFile)
+
+        // Build signed attributes inner content (ATTR sequences without SET wrapper)
+        val attrsInner = DerWriter().apply {
+            writeSequence {
+                writeOid("1.2.840.113549.1.9.3")
+                writeSet { writeOid("1.2.840.113549.1.7.1") }
+            }
+            writeSequence {
+                writeOid("1.2.840.113549.1.9.4")
+                writeSet { writeOctetString(digest) }
+            }
+            writeSequence {
+                writeOid("1.2.840.113549.1.9.5")
+                writeSet { writeUtcTime(Date()) }
+            }
+        }.toByteArray()
+
+        // [0] IMPLICIT SET OF Attribute (constructed tag 0xA0)
+        val signedAttrs = DerWriter().apply {
+            writeContextTaggedSet(0) { writeRaw(attrsInner) }
+        }.toByteArray()
+
+        // Sign over the DER of signedAttrs
+        val sig = Signature.getInstance("SHA256WithRSA").apply {
+            initSign(privateKey)
+            update(signedAttrs)
+        }.sign()
+
+        val dn = certificate.issuerX500Principal
+
+        // SignerInfo
+        val signerInfo = DerWriter().apply {
+            writeSequence {
+                writeInteger(BigInteger.ONE)
+                writeSequence {
+                    writeRaw(dn.encoded)
+                    writeInteger(certificate.serialNumber)
+                }
+                writeSequence {
+                    writeOid("2.16.840.1.101.3.4.2.1")
+                    writeNull()
+                }
+                writeRaw(signedAttrs)
+                writeSequence {
+                    writeOid("1.2.840.113549.1.1.11")
+                    writeNull()
+                }
+                writeOctetString(sig)
+            }
+        }.toByteArray()
+
+        // Build SignedData
+        val signedData = DerWriter().apply {
+            writeSequence {
+                writeInteger(BigInteger.ONE)
+                writeSet {
+                    writeSequence {
+                        writeOid("2.16.840.1.101.3.4.2.1")
+                        writeNull()
+                    }
+                }
+                writeSequence {
+                    writeOid("1.2.840.113549.1.7.1")
+                }
+                writeContextTaggedSet(0) { writeRaw(certificate.encoded) }
+                writeContextTaggedSet(1) { writeRaw(signerInfo) }
+            }
+        }.toByteArray()
+
+        // ContentInfo wrapping SignedData
+        return DerWriter().apply {
+            writeSequence {
+                writeOid("1.2.840.113549.1.7.2")
+                writeContextSpecificExplicit(0) { writeRaw(signedData) }
+            }
+        }.toByteArray()
+    }
+
+    private fun DerWriter.writeContextTaggedSet(tag: Int, block: DerWriter.() -> Unit) {
+        val nested = DerWriter()
+        nested.block()
+        write(0xA0 + tag, nested.toByteArray())
+    }
+
+    private fun writeSignedApk(
+        input: File, output: File,
+        manifest: ByteArray, sf: ByteArray, sigBlock: ByteArray
+    ) {
+        val newMetaInf = mapOf(
+            "META-INF/MANIFEST.MF" to manifest,
+            "META-INF/CERT.SF" to sf,
+            "META-INF/CERT.RSA" to sigBlock
+        )
+
+        ZipFile(input).use { zip ->
+            ZipOutputStream(output.outputStream()).use { zos ->
+                val entries = zip.entries().asSequence()
+                    .filter { !it.isDirectory }
+                    .sortedBy { it.name }
+                    .toList()
+
+                val written = mutableSetOf<String>()
+
+                for (entry in entries) {
+                    val name = entry.name
+                    if (name.startsWith("META-INF/")) {
+                        val fn = name.substring("META-INF/".length)
+                        if (fn == "MANIFEST.MF" || fn.endsWith(".SF") || fn.endsWith(".RSA") || fn.endsWith(".DSA") || fn.endsWith(".EC")) {
+                            continue
+                        }
+                    }
+                    val ze = ZipEntry(name)
+                    val data = zip.getInputStream(entry).readBytes()
+                    ze.size = data.size.toLong()
+                    CRC32().also { it.update(data) }.let { ze.crc = it.value }
+                    zos.putNextEntry(ze)
+                    zos.write(data)
+                    zos.closeEntry()
+                    written.add(name)
+                }
+
+                for ((name, data) in newMetaInf) {
+                    val ze = ZipEntry(name)
+                    ze.size = data.size.toLong()
+                    CRC32().also { it.update(data) }.let { ze.crc = it.value }
+                    zos.putNextEntry(ze)
+                    zos.write(data)
+                    zos.closeEntry()
+                }
+            }
+        }
+    }
+
     private class DerWriter {
         private val out = ByteArrayOutputStream()
 
@@ -142,10 +322,6 @@ class ApkSigner {
             val nested = DerWriter()
             nested.block()
             write(0x30, nested.toByteArray())
-        }
-
-        fun writeSequence(data: ByteArray) {
-            write(0x30, data)
         }
 
         fun writeSet(block: DerWriter.() -> Unit) {
